@@ -1,1 +1,8 @@
 html/
+*.o
+*.lst
+*.d
+*.bin
+*.elf
+*.hex
+*.map
