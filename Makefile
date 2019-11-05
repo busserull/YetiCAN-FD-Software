@@ -43,6 +43,10 @@ Src/usbd_desc.c \
 Src/usbd_cdc_if.c \
 Src/stm32f0xx_it.c \
 Src/stm32f0xx_hal_msp.c \
+Src/crc.c \
+Src/gpio.c \
+Src/spi.c \
+Src/tim.c \
 Src/mcp_can_controller.c \
 Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_pcd.c \
 Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_pcd_ex.c \
@@ -207,6 +211,11 @@ debug: $(BUILD_DIR)/$(TARGET).elf
 	build/$(TARGET).elf -ex "set confirm off" -ex "set pagination off" \
 	-ex "load" -ex "monitor reset halt" -ex "thbreak main.c:main" \
 	-ex "continue" -tui
+
+.PHONY: reset
+reset:
+	arm-none-eabi-gdb -q -iex "target extended-remote localhost:3333" \
+	-ex "monitor reset" -ex "set confirm off" -ex "quit"
 
 #######################################
 # clean up
