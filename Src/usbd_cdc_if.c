@@ -65,8 +65,8 @@
 /* USER CODE BEGIN PRIVATE_DEFINES */
 /* Define size for the receive and transmit buffer over CDC */
 /* It's up to user to redefine and/or remove those define */
-#define APP_RX_DATA_SIZE  1000
-#define APP_TX_DATA_SIZE  1000
+#define APP_RX_DATA_SIZE  512
+#define APP_TX_DATA_SIZE  512
 /* USER CODE END PRIVATE_DEFINES */
 
 /**
@@ -227,6 +227,15 @@ static int8_t CDC_Control_FS(uint8_t cmd, uint8_t* pbuf, uint16_t length)
     break;
 
     case CDC_GET_LINE_CODING:
+    /*
+      pbuf[0] = (uint8_t)(115200);
+      pbuf[1] = (uint8_t)(115200 >> 8);
+      pbuf[2] = (uint8_t)(115200 >> 16);
+      pbuf[3] = (uint8_t)(115200 >> 24);
+      pbuf[4] = 0x00;
+      pbuf[5] = 0x00;
+      pbuf[6] = 0x08;
+      */
 
     break;
 
@@ -246,6 +255,12 @@ static int8_t CDC_Control_FS(uint8_t cmd, uint8_t* pbuf, uint16_t length)
   /* USER CODE END 5 */
 }
 
+static void upcase(uint8_t * buffer, uint32_t size){
+  for(uint32_t i = 0; i < size; i++){
+    buffer[i] += ('A' - 'a');
+  }
+}
+
 /**
   * @brief  Data received over USB OUT endpoint are sent over CDC interface
   *         through this function.
@@ -263,6 +278,8 @@ static int8_t CDC_Control_FS(uint8_t cmd, uint8_t* pbuf, uint16_t length)
 static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len)
 {
   /* USER CODE BEGIN 6 */
+  upcase(Buf, *Len);
+  CDC_Transmit_FS(Buf, *Len);
   USBD_CDC_SetRxBuffer(&hUsbDeviceFS, &Buf[0]);
   USBD_CDC_ReceivePacket(&hUsbDeviceFS);
   return (USBD_OK);
