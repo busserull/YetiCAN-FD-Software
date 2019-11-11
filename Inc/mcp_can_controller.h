@@ -3,8 +3,24 @@
 
 #include <stdint.h>
 
-uint8_t mcp_read_byte(uint16_t address);
+typedef struct {
+    uint8_t a;
+} MCP_TransmitObject;
 
-void mcp_write_byte(uint16_t address, uint8_t data);
+uint8_t mcp_conf_mode_configuration();
+
+uint8_t mcp_conf_mode_internal_loopback();
+
+uint8_t mcp_conf_mode_normal_can_fd();
+
+uint8_t mcp_conf_clock_bypass_20MHz();
+
+uint8_t mcp_register_read(uint16_t);
+
+uint8_t mcp_send(uint8_t * payload, uint8_t size);
+
+
+
+uint8_t mcp_conf_simple_read();
 
 #endif

@@ -23,6 +23,7 @@
 #include "usbd_cdc_if.h"
 
 /* USER CODE BEGIN INCLUDE */
+#include "packet.h"
 
 /* USER CODE END INCLUDE */
 
@@ -65,8 +66,8 @@
 /* USER CODE BEGIN PRIVATE_DEFINES */
 /* Define size for the receive and transmit buffer over CDC */
 /* It's up to user to redefine and/or remove those define */
-#define APP_RX_DATA_SIZE  256
-#define APP_TX_DATA_SIZE  256
+#define APP_RX_DATA_SIZE  128
+#define APP_TX_DATA_SIZE  128
 /* USER CODE END PRIVATE_DEFINES */
 
 /**
@@ -255,32 +256,6 @@ static int8_t CDC_Control_FS(uint8_t cmd, uint8_t* pbuf, uint16_t length)
   /* USER CODE END 5 */
 }
 
-static void upcase(uint8_t * buffer, uint32_t size){
-  for(uint32_t i = 0; i < size; i++){
-    buffer[i] += ('A' - 'a');
-  }
-}
-
-static uint8_t m_message_buffer[256] = {0};
-static uint8_t m_message_index = 0;
-
-uint8_t command_match(){
-  if(m_message_index < 4){
-    return 0;
-  }
-
-  m_message_index = 0;
-
-  uint8_t command[] = "yeti";
-  for(int i = 0; i < 4; i++){
-    if(command[i] != m_message_buffer[i]){
-      return 0;
-    }
-  }
-
-  return 1;
-}
-
 /**
   * @brief  Data received over USB OUT endpoint are sent over CDC interface
   *         through this function.
@@ -298,15 +273,9 @@ uint8_t command_match(){
 static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len)
 {
   /* USER CODE BEGIN 6 */
-  for(int i = 0; i < *Len; i++){
-    m_message_buffer[m_message_index++] = Buf[i];
-  }
-
-  if(command_match()){
-    uint8_t message[] = "I will enter your body!\n\r";
-    uint8_t size = 25;
-    CDC_Transmit_FS(message, size);
-  }
+    for(int i = 0; i < *Len; i++){
+        packet_build(Buf[i]);
+    }
 
   USBD_CDC_SetRxBuffer(&hUsbDeviceFS, &Buf[0]);
   USBD_CDC_ReceivePacket(&hUsbDeviceFS);

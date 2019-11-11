@@ -98,8 +98,10 @@ int main(void)
   MX_CRC_Init();
   MX_TIM14_Init();
   /* USER CODE BEGIN 2 */
-  mcp_write_byte(0x0e00, 0x00);
-  HAL_Delay(10);
+  mcp_conf_mode_configuration();
+  mcp_conf_clock_bypass_20MHz();
+  /* mcp_conf_mode_internal_loopback(); */
+  mcp_conf_mode_normal_can_fd();
 
   MX_USB_DEVICE_Init();
   /* USER CODE END 2 */
@@ -107,19 +109,18 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   /* uint8_t CDC_Transmit_FS(uint8_t* Buf, uint16_t Len) */
-  uint8_t p_tx[] = "Hello there\n\r";
   while (1)
   {
 
-      /* CDC_Transmit_FS(p_tx, 13); */
+      mcp_send(0x00000000, 1);
 
       /* mcp_write_byte(0x0e00, 0x00); */
 
-      HAL_Delay(500);
+      uint8_t re = mcp_conf_simple_read();
 
       /* mcp_write_byte(0x0e00, 0x60); */
 
-      /* HAL_Delay(500); */
+      HAL_Delay(500);
 
     /* USER CODE END WHILE */
 
