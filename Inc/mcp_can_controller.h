@@ -7,20 +7,19 @@ typedef struct {
     uint8_t a;
 } MCP_TransmitObject;
 
-uint8_t mcp_conf_mode_configuration();
+/* void mcp_mode_nominal_can_fd(); */
 
-uint8_t mcp_conf_mode_internal_loopback();
+/* void mcp_mode_configuration(); */
 
-uint8_t mcp_conf_mode_normal_can_fd();
+void mcp_init();
 
-uint8_t mcp_conf_clock_bypass_20MHz();
+void mcp_send();
 
-uint8_t mcp_register_read(uint16_t);
+void mcp_write(uint16_t address, uint8_t * buffer, uint8_t size);
 
-uint8_t mcp_send(uint8_t * payload, uint8_t size);
+void mcp_read(uint16_t address, uint8_t * buffer, uint8_t size);
 
-
-
-uint8_t mcp_conf_simple_read();
+void mcp_set_reg(uint16_t, uint8_t, uint8_t);
+uint8_t mcp_get_reg(uint16_t, uint8_t);
 
 #endif
