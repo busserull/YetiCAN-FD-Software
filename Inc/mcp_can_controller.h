@@ -56,4 +56,6 @@ void mcp_read(uint16_t address, uint8_t * buffer, uint8_t size);
 
 uint8_t any_fifos();
 
+uint8_t * read_fifo(uint8_t fifo_number);
+
 #endif

@@ -120,6 +120,14 @@ int main(void)
       fifo = any_fifos();
       mcp_send();
       fifo = any_fifos();
+
+      uint8_t * buffer = 0;
+      if(fifo){
+          buffer = read_fifo(fifo);
+      }
+
+      free(buffer);
+
       HAL_Delay(5);
       mcp_check_transmit_event(&event);
       fifo = any_fifos();

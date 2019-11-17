@@ -152,6 +152,8 @@ static void mcp_txq_init(PayloadSize payload_size, uint8_t message_depth){
     } while(txq_busy && timeout);
 }
 
+static uint32_t mcp_user_address_get(uint16_t ua_register);
+
 typedef struct {
     PayloadSize payload_size;
     uint8_t message_depth;
@@ -159,7 +161,8 @@ typedef struct {
 } MCP_FifoConfig;
 
 static void mcp_fifo_init_recv(uint8_t fifo, MCP_FifoConfig * p_config){
-    uint16_t fifo_address = C1FIFOCON1 + (fifo * (C1FIFOCON2 - C1FIFOCON1));
+    uint16_t fifo_spacing = C1FIFOCON2 - C1FIFOCON1;
+    uint16_t fifo_address = C1FIFOCON1 + (fifo - 1) * fifo_spacing;
 
     /* Set FIFO as Receive */
     uint8_t fifo_receive = p_config->use_timestamp ? 0x20 : 0x00;
@@ -195,6 +198,21 @@ uint8_t any_fifos(){
     return 0;
 }
 
+#include <stdlib.h>
+uint8_t * read_fifo(uint8_t fifo_number){
+    /* MCP_TransmitObject message = {0}; */
+
+    uint16_t ua_register = C1FIFOUA1 + (fifo_number - 1) * (C1FIFOUA2 - C1FIFOUA1);
+    uint32_t fifo_address = mcp_user_address_get(ua_register);
+
+    uint8_t * buffer = (uint8_t *)malloc(76 * sizeof(uint8_t));
+    mcp_read(fifo_address, buffer, 76);
+
+    mcp_reg_set(C1FIFOCON1, 1, 0x01);
+
+    return buffer;
+}
+
 void mcp_init(){
     mcp_mode_set(MODE_CONFIGURATION, 1, 1);
 
@@ -211,8 +229,8 @@ void mcp_init(){
         .message_depth = 6,
         .use_timestamp = 1,
     };
-    mcp_fifo_init_recv(0, &fifo_config);
     mcp_fifo_init_recv(1, &fifo_config);
+    /* mcp_fifo_init_recv(1, &fifo_config); */
 
     mcp_reg_set(C1FLTCON0, 0, 0x00);
     mcp_reg_set(C1FLTCON0, 0, 0x01);
