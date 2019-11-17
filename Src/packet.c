@@ -5,16 +5,16 @@
 
 
 void packet_build(uint8_t byte){
-    uint8_t a_rec[] = "Fist\n\r";
-    uint8_t b_rec[] = "Fuck\n\r";
+    uint8_t a_rec[] = "It's very easy to cream in literally minutes\n\r";
+    uint8_t b_rec[] = "Go behind, and pull up the skirt\n\r";
 
     switch(byte){
         case 'a':
-            CDC_Transmit_FS(a_rec, 6);
+            CDC_Transmit_FS(a_rec, 46);
             break;
 
         case 'b':
-            CDC_Transmit_FS(b_rec, 6);
+            CDC_Transmit_FS(b_rec, 34);
             break;
 
         default:

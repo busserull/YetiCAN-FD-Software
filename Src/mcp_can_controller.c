@@ -187,15 +187,42 @@ static void mcp_fifo_init_recv(uint8_t fifo, MCP_FifoConfig * p_config){
     } while(fifo_busy && timeout);
 }
 
-uint8_t any_fifos(){
-    for(int i = 0; i < 31; i++){
-        uint8_t not_empty = mcp_reg_get(C1FIFOSTA1 + i, 0) & 0x01;
-        if(not_empty){
-            return i + 1;
-        }
+
+
+
+uint32_t mcp_fifo_read(uint8_t fifo){
+    (void)(fifo);
+
+    if(mcp_reg_get(C1FIFOSTA1, 0) & 0x01){
+        uint32_t fifo_address = mcp_user_address_get(C1FIFOUA1);
+
+        uint8_t buffer[4] = {0};
+        mcp_read(fifo_address, buffer, 4);
+        mcp_reg_set(C1FIFOCON1, 1, 0x01);
+
+        uint32_t id = 0
+            | buffer[3]
+            | ((buffer[2] & 0x07) << 8)
+            | ((buffer[0] & 0x20) << 11)
+            ;
+
+        return id;
     }
 
-    return 0;
+    return 0xff000000;
+}
+
+uint8_t any_fifos(){
+    uint8_t not_empty = mcp_reg_get(C1FIFOSTA1, 0) & 0x01;
+    return not_empty;
+    /* for(int i = 0; i < 31; i++){ */
+    /*     uint8_t not_empty = mcp_reg_get(C1FIFOSTA1 + i, 0) & 0x01; */
+    /*     if(not_empty){ */
+    /*         return i + 1; */
+    /*     } */
+    /* } */
+
+    /* return 0; */
 }
 
 #include <stdlib.h>
@@ -213,12 +240,41 @@ uint8_t * read_fifo(uint8_t fifo_number){
     return buffer;
 }
 
+void mcp_nominal_bit_time_init(uint8_t seg1, uint8_t seg2){
+    /* Baud rate prescaler = 1 */
+    mcp_reg_set(C1NBTCFG, 3, 0x00);
+
+    mcp_reg_set(C1NBTCFG, 2, seg1);
+    mcp_reg_set(C1NBTCFG, 1, seg2);
+
+    uint8_t sync_jump_width = (seg1 > seg2) ? seg2 : seg1;
+    mcp_reg_set(C1NBTCFG, 0, sync_jump_width);
+}
+
+void mcp_data_bit_time_init(uint8_t seg1, uint8_t seg2){
+    /* Baud rate prescaler = 1 */
+    mcp_reg_set(C1DBTCFG, 3, 0x00);
+
+    mcp_reg_set(C1DBTCFG, 2, seg1);
+    mcp_reg_set(C1DBTCFG, 1, seg2);
+
+    uint8_t sync_jump_width = (seg1 > seg2) ? seg2 : seg1;
+    mcp_reg_set(C1DBTCFG, 0, sync_jump_width);
+}
+
 void mcp_init(){
     mcp_mode_set(MODE_CONFIGURATION, 1, 1);
 
     mcp_clock_bypass_init();
 
     /* Configure IOCON for GPIO */
+
+    /* 500 kbps nominal bit rate */
+    mcp_nominal_bit_time_init(31, 9);
+
+    /* 1 Mbps data bit rate */
+    /* 500 kbps data bit rate */
+    mcp_data_bit_time_init(31, 9);
 
     mcp_tef_init(5, 1);
 
@@ -316,7 +372,7 @@ uint8_t mcp_send(){
     transmit_object.use_fd_format = 1;
     transmit_object.use_bit_rate_switch = 0;
     transmit_object.use_extended_id = 0;
-    transmit_object.frame_id = 12;
+    transmit_object.frame_id = 0xabcdef;
     transmit_object.sequence_number = 24;
     transmit_object.data_length = DATA_LENGTH_08_BYTES;
     transmit_object.p_data = data;

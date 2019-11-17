@@ -62,6 +62,7 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+#include <stdio.h>
 
 /* USER CODE END 0 */
 
@@ -112,55 +113,48 @@ int main(void)
 
   MCP_TransmitEvent event = {0};
 
+  uint32_t counter = 0;
+
   while (1)
   {
 
-      /* get_20(); */
-      volatile uint8_t fifo = 0;
-      fifo = any_fifos();
-      mcp_send();
-      fifo = any_fifos();
+    volatile uint32_t id = mcp_fifo_read(1);
+    uint8_t buffer[50] = {0};
+    uint8_t size = snprintf(
+        (char *)(buffer), 50, "ID: %lx\n\r", id
+    );
 
-      uint8_t * buffer = 0;
-      if(fifo){
-          buffer = read_fifo(fifo);
-      }
+    if(id != 0xff000000){
+        CDC_Transmit_FS(buffer, size);
+    }
+    /* if(any_fifos()){ */
+    /*     uint8_t buffer[] = "FIFO 1\n\r"; */
+    /*     CDC_Transmit_FS(buffer, 8); */
+    /* } */
 
-      free(buffer);
+    id = mcp_fifo_read(1);
+    mcp_send();
+    id = mcp_fifo_read(1);
 
-      HAL_Delay(5);
-      mcp_check_transmit_event(&event);
-      fifo = any_fifos();
-      HAL_Delay(5);
-      /* get_2(); */
-      /* HAL_Delay(500); */
+    /* volatile uint8_t fifo = 0; */
+    /* fifo = any_fifos(); */
+    /* mcp_send(); */
+    /* fifo = any_fifos(); */
 
-      /* mcp_send(0x00000000, 1); */
+    /* uint8_t * buffer = 0; */
+    /* if(fifo){ */
+    /*     buffer = read_fifo(fifo); */
+    /* } */
 
-      /* mcp_write_byte(0x0e00, 0x00); */
+    /* free(buffer); */
 
-      /* uint8_t re = mcp_conf_simple_read(); */
+    HAL_Delay(5);
+    /* mcp_check_transmit_event(&event); */
+    /* fifo = any_fifos(); */
+    /* HAL_Delay(5); */
+    /* get_2(); */
+    /* HAL_Delay(500); */
 
-      /* mcp_write_byte(0x0e00, 0x60); */
-
-      /* uint8_t div_one = 0x00; */
-      /* uint8_t div_ten = 0x60; */
-
-      /* uint8_t read_byte = 0xff; */
-
-      /* mcp_write(0x0e00, &div_one, 1); */
-
-      /* mcp_read(0x0e00, &read_byte, 1); */
-
-      /* mcp_write(0x0e00, &div_ten, 1); */
-
-      /* HAL_Delay(500); */
-
-      /* uint8_t div_one_array[] = {0x00, 0x00}; */
-      /* uint8_t div_ten_array[] = {0x60, 0x00}; */
-
-      /* mcp_write(0x0e00, div_one_array, 2); */
-      /* mcp_write(0x0e00, div_ten_array, 2); */
 
     /* USER CODE END WHILE */
 
