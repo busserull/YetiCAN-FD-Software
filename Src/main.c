@@ -111,42 +111,40 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 
-  MCP_TransmitEvent event = {0};
+    uint8_t data[8] = {'C', 'o', 'c', 'k', 't', 'i', 't', 's'};
 
-  uint32_t counter = 0;
+    MCP_Message object = {
+        .use_fd_format = 1,
+        .use_bit_rate_switch = 0,
+        .use_extended_id = 0,
+        .error_active = 1,
+
+        .frame_id = 0x7babe,
+        .sequence_number = 0x55aa55,
+
+        .data_length = DATA_LENGTH_08_BYTES,
+        .p_data = data
+    };
 
   while (1)
   {
+    MCP_Message receive_object;
 
-    volatile uint32_t id = mcp_fifo_read(1);
-    uint8_t buffer[50] = {0};
-    uint8_t size = snprintf(
-        (char *)(buffer), 50, "ID: %lx\n\r", id
-    );
+    uint8_t fifo_empty = 0;
 
-    if(id != 0xff000000){
-        CDC_Transmit_FS(buffer, size);
+    fifo_empty = mcp_fifo_read(&receive_object, 1);
+    if(!fifo_empty){
+        free(receive_object.p_data);
     }
-    /* if(any_fifos()){ */
-    /*     uint8_t buffer[] = "FIFO 1\n\r"; */
-    /*     CDC_Transmit_FS(buffer, 8); */
-    /* } */
 
-    id = mcp_fifo_read(1);
-    mcp_send();
-    id = mcp_fifo_read(1);
+    mcp_send(&object);
 
-    /* volatile uint8_t fifo = 0; */
-    /* fifo = any_fifos(); */
-    /* mcp_send(); */
-    /* fifo = any_fifos(); */
+    fifo_empty = mcp_fifo_read(&receive_object, 1);
+    if(!fifo_empty){
+        free(receive_object.p_data);
+    }
 
-    /* uint8_t * buffer = 0; */
-    /* if(fifo){ */
-    /*     buffer = read_fifo(fifo); */
-    /* } */
 
-    /* free(buffer); */
 
     HAL_Delay(5);
     /* mcp_check_transmit_event(&event); */

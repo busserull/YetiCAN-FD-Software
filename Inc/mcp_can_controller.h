@@ -23,14 +23,25 @@ typedef enum {
 } MCP_FrameDataLength;
 
 typedef struct {
+    /* TX RX */
     uint8_t use_fd_format;
     uint8_t use_bit_rate_switch;
     uint8_t use_extended_id;
+    uint8_t error_active;
+
+    /* TX RX */
     uint32_t frame_id;
+    /* TX */
     uint32_t sequence_number;
+    /* RX */
+    uint8_t filter_hit;
+    uint8_t timestamp_valid;
+    uint32_t timestamp;
+
+    /* TX RX */
     MCP_FrameDataLength data_length;
     uint8_t * p_data;
-} MCP_TransmitObject;
+} MCP_Message;
 
 typedef struct {
     uint8_t fd_enabled;
@@ -56,6 +67,6 @@ void mcp_read(uint16_t address, uint8_t * buffer, uint8_t size);
 
 
 
-uint32_t mcp_fifo_read(uint8_t fifo);
+uint8_t mcp_fifo_read(MCP_Message * p_receive_object, uint8_t fifo_number);
 
 #endif

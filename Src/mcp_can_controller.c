@@ -3,6 +3,7 @@
 
 #define COMMAND_READ             0x03
 #define COMMAND_WRITE            0x02
+#define COMMAND_RESET            0x00
 #define MCP_SPI_TIMEOUT           100
 
 #define FIFO_INIT_TIMEOUT          10
@@ -28,6 +29,7 @@
 extern SPI_HandleTypeDef g_spi1_handle;
 
 static uint8_t m_tef_timestamp_enabled = 0;
+static uint8_t m_fifo_timestamp_enabled[31] = {0};
 
 typedef enum {
     PAYLOAD_08_BYTES = 0x00,
@@ -42,6 +44,7 @@ typedef enum {
 
 static void mcp_slave_select();
 static void mcp_slave_deselect();
+static void mcp_reset();
 static void mcp_mode_set(uint8_t mode, uint8_t kill_tx, uint8_t keep_sharing);
 static void mcp_clock_bypass_init();
 static uint8_t mcp_reg_get(uint16_t address, uint8_t byte_number);
@@ -57,6 +60,16 @@ static void mcp_slave_select(){
 
 static void mcp_slave_deselect(){
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
+}
+
+static void mcp_reset(){
+    uint8_t command[2] = {0};
+    command[0] = (uint8_t)(COMMAND_RESET << 4);
+    command[1] = 0x00;
+
+    mcp_slave_select();
+    HAL_SPI_Transmit(&g_spi1_handle, command, 2, MCP_SPI_TIMEOUT);
+    mcp_slave_deselect();
 }
 
 static void mcp_mode_set(uint8_t mode, uint8_t kill_tx, uint8_t keep_sharing){
@@ -161,8 +174,11 @@ typedef struct {
 } MCP_FifoConfig;
 
 static void mcp_fifo_init_recv(uint8_t fifo, MCP_FifoConfig * p_config){
-    uint16_t fifo_spacing = C1FIFOCON2 - C1FIFOCON1;
-    uint16_t fifo_address = C1FIFOCON1 + (fifo - 1) * fifo_spacing;
+    uint32_t fifo_spacing = C1FIFOCON2 - C1FIFOCON1;
+    uint32_t fifo_address = C1FIFOCON1 + (fifo - 1) * fifo_spacing;
+
+    /* Track timestamp use */
+    m_fifo_timestamp_enabled[fifo - 1] = p_config->use_timestamp;
 
     /* Set FIFO as Receive */
     uint8_t fifo_receive = p_config->use_timestamp ? 0x20 : 0x00;
@@ -189,55 +205,70 @@ static void mcp_fifo_init_recv(uint8_t fifo, MCP_FifoConfig * p_config){
 
 
 
+#include <stdlib.h>
+uint8_t mcp_fifo_read(MCP_Message * p_msg, uint8_t fifo_number){
+    /* Check for messages */
+    uint32_t spacing = C1FIFOSTA2 - C1FIFOSTA1;
+    uint32_t status_register = C1FIFOSTA1 + (fifo_number - 1) * spacing;
 
-uint32_t mcp_fifo_read(uint8_t fifo){
-    (void)(fifo);
-
-    if(mcp_reg_get(C1FIFOSTA1, 0) & 0x01){
-        uint32_t fifo_address = mcp_user_address_get(C1FIFOUA1);
-
-        uint8_t buffer[4] = {0};
-        mcp_read(fifo_address, buffer, 4);
-        mcp_reg_set(C1FIFOCON1, 1, 0x01);
-
-        uint32_t id = 0
-            | buffer[3]
-            | ((buffer[2] & 0x07) << 8)
-            | ((buffer[0] & 0x20) << 11)
-            ;
-
-        return id;
+    if(!(mcp_reg_get(status_register, 0) & 0x01)){
+        return 1;
     }
 
-    return 0xff000000;
-}
+    /* Get Receive Object address */
+    spacing = C1FIFOUA2 - C1FIFOUA1;
+    uint32_t ua_register = C1FIFOUA1 + (fifo_number - 1) * spacing;
+    uint32_t head_address = mcp_user_address_get(ua_register);
 
-uint8_t any_fifos(){
-    uint8_t not_empty = mcp_reg_get(C1FIFOSTA1, 0) & 0x01;
-    return not_empty;
-    /* for(int i = 0; i < 31; i++){ */
-    /*     uint8_t not_empty = mcp_reg_get(C1FIFOSTA1 + i, 0) & 0x01; */
-    /*     if(not_empty){ */
-    /*         return i + 1; */
-    /*     } */
-    /* } */
+    /* Construct Receive Object header */
+    uint8_t object_header[12] = {0};
+    mcp_ram_read(head_address, object_header, 12);
 
-    /* return 0; */
-}
+    p_msg->frame_id = 0
+        | (object_header[0])
+        | (object_header[1] << 8)
+        | (object_header[2] << 16)
+        | (object_header[3] << 24) & 0x1f
+        ;
 
-#include <stdlib.h>
-uint8_t * read_fifo(uint8_t fifo_number){
-    /* MCP_TransmitObject message = {0}; */
+    p_msg->use_fd_format = (object_header[4] & 0x80) ? 1 : 0;
+    p_msg->use_bit_rate_switch = (object_header[4] & 0x40) ? 1 : 0;
+    p_msg->use_extended_id = (object_header[4] & 0x10) ? 1 : 0;
+    p_msg->data_length = object_header[4] & 0x0f;
 
-    uint16_t ua_register = C1FIFOUA1 + (fifo_number - 1) * (C1FIFOUA2 - C1FIFOUA1);
-    uint32_t fifo_address = mcp_user_address_get(ua_register);
+    p_msg->error_active = object_header[5] & 0x01;
+    p_msg->filter_hit = object_header[5] >> 3;
 
-    uint8_t * buffer = (uint8_t *)malloc(76 * sizeof(uint8_t));
-    mcp_read(fifo_address, buffer, 76);
+    p_msg->timestamp = 0
+        | (object_header[8])
+        | (object_header[9] << 8)
+        | (object_header[10] << 16)
+        | (object_header[11] << 24)
+        ;
 
-    mcp_reg_set(C1FIFOCON1, 1, 0x01);
+    /* Copy Object data */
+    uint32_t data_address;
+    if(m_fifo_timestamp_enabled[fifo_number - 1]){
+        data_address = head_address + 12;
+        p_msg->timestamp_valid = 1;
+    }
+    else{
+        data_address = head_address + 8;
+        p_msg->timestamp_valid = 0;
+    }
 
-    return buffer;
+    uint8_t data_length = object_header[4] & 0x0f;
+    uint8_t * buffer = (uint8_t *)malloc(data_length * sizeof(uint8_t));
+    mcp_ram_read(data_address, buffer, data_length);
+
+    p_msg->p_data = buffer;
+
+    /* Clear packet from RAM */
+    spacing = C1FIFOCON2 - C1FIFOCON1;
+    uint32_t control_reg = C1FIFOCON1 + (fifo_number - 1) * spacing;
+    mcp_reg_set(control_reg, 1, 0x01);
+
+    return 0;
 }
 
 void mcp_nominal_bit_time_init(uint8_t seg1, uint8_t seg2){
@@ -263,6 +294,8 @@ void mcp_data_bit_time_init(uint8_t seg1, uint8_t seg2){
 }
 
 void mcp_init(){
+    mcp_reset();
+
     mcp_mode_set(MODE_CONFIGURATION, 1, 1);
 
     mcp_clock_bypass_init();
@@ -305,86 +338,55 @@ typedef struct {
     uint8_t * p_data;
 } TransmitObject;
 
-static void mcp_make_object_header(TransmitObject object, uint8_t * p_header){
-    for(int i = 0; i < 8; i++){
-        p_header[i] = 0x00;
-    }
-
-    /* Transmit Object word 0 */
-    p_header[3] = (uint8_t)(object.frame_id);
-    p_header[2] = (uint8_t)(object.frame_id >> 8);
-    p_header[1] = (uint8_t)(object.frame_id >> 16);
-    p_header[0] = (uint8_t)((object.frame_id >> 24) & 0x3f);
-
-    if(object.use_extended_id){
-        p_header[0] &= 0x1f;
-    }
-    else{
-        p_header[2] &= 0x07;
-        p_header[1] = 0x00;
-        p_header[0] = (object.frame_id & (1 << 11)) ? 0x40 : 0x00;
-    }
-
-    /* Transmit Object word 1 */
-    uint8_t fdf_flag = object.use_fd_format ? 0x80 : 0x00;
-    uint8_t brs_flag = object.use_bit_rate_switch ? 0x40 : 0x00;
-    uint8_t rtr_flag = 0x00;
-    uint8_t ide_flag = object.use_extended_id ? 0x01 : 0x00;
-    uint8_t control_field = fdf_flag | brs_flag | rtr_flag | ide_flag;
-
-    p_header[7] = control_field | (uint8_t)(object.data_length);
-    p_header[6] = (uint8_t)(object.sequence_number << 1);
-    p_header[5] = (uint8_t)(object.sequence_number << 9);
-    p_header[4] = (uint8_t)(object.sequence_number << 17);
-}
 
 static uint32_t mcp_user_address_get(uint16_t ua_register){
-    uint32_t address = 0x00000000;
-
-    address |= mcp_reg_get(ua_register, 0);
-    address |= mcp_reg_get(ua_register, 1) << 8;
-    address |= mcp_reg_get(ua_register, 2) << 16;
-    address |= mcp_reg_get(ua_register, 3) << 24;
+    uint32_t address = 0
+        | (mcp_reg_get(ua_register, 0))
+        | (mcp_reg_get(ua_register, 1) << 8)
+        | (mcp_reg_get(ua_register, 2) << 16)
+        | (mcp_reg_get(ua_register, 3) << 24)
+        ;
 
     return address + 0x400;
 }
 
 uint8_t mcp_receive();
 
-uint8_t mcp_send(){
+uint8_t mcp_send(MCP_Message * p_msg){
     /* Check for space in TXQ */
     if(!(mcp_reg_get(C1TXQSTA, 0) & 0x01)){
         return 1;
     }
 
-    /* Make transmit object */
-    uint8_t data[8] = "Yeti\n\r\0\0";
-
-    TransmitObject transmit_object = {0};
-        /* .use_fd_format = 1, */
-        /* .use_bit_rate_switch = 0, */
-        /* .use_extended_id = 0, */
-        /* .frame_id = 12, */
-        /* .sequence_number = 24, */
-        /* .data_length = DATA_LENGTH_08_BYTES, */
-        /* .p_data = data */
-    /* }; */
-    transmit_object.use_fd_format = 1;
-    transmit_object.use_bit_rate_switch = 0;
-    transmit_object.use_extended_id = 0;
-    transmit_object.frame_id = 0xabcdef;
-    transmit_object.sequence_number = 24;
-    transmit_object.data_length = DATA_LENGTH_08_BYTES;
-    transmit_object.p_data = data;
-
+    /* Create Transmit Object header */
     uint8_t transmit_object_header[8] = {0};
-    mcp_make_object_header(transmit_object, transmit_object_header);
+
+    /* Packet ID */
+    transmit_object_header[0] = (uint8_t)(p_msg->frame_id);
+    transmit_object_header[1] = (uint8_t)(p_msg->frame_id >> 8);
+    transmit_object_header[2] = (uint8_t)(p_msg->frame_id >> 16);
+    transmit_object_header[3] = (uint8_t)(p_msg->frame_id >> 24) & 0x1f;
+
+    /* Data length and flags */
+    uint8_t packet_flags = 0
+        | (p_msg->use_fd_format ? 0x80 : 0x00)
+        | (p_msg->use_bit_rate_switch ? 0x40 : 0x00)
+        | (p_msg->use_extended_id ? 0x10 : 0x00)
+        ;
+
+    uint8_t esi = p_msg->error_active ? 0x00 : 0x01;
+
+    transmit_object_header[4] = packet_flags | (p_msg->data_length);
+    transmit_object_header[5] = (uint8_t)(p_msg->sequence_number << 1) | esi;
+    transmit_object_header[6] = (uint8_t)(p_msg->sequence_number >> 7);
+    transmit_object_header[7] = (uint8_t)(p_msg->sequence_number >> 15);
 
     /* Insert transmit object */
-    uint32_t insert_address = mcp_user_address_get(C1TXQUA);
+    uint32_t head_address = mcp_user_address_get(C1TXQUA);
+    uint32_t data_address = head_address + 8;
 
-    mcp_write(insert_address, transmit_object_header, 8);
-    mcp_write(insert_address + 8, data, 8);
+    mcp_ram_write(head_address, transmit_object_header, 8);
+    mcp_ram_write(data_address, p_msg->p_data, p_msg->data_length);
 
     /* Increment HEAD and request transmission */
     mcp_reg_set(C1TXQCON, 1, 0x03);
@@ -449,7 +451,11 @@ void mcp_read(uint16_t address, uint8_t * buffer, uint8_t size){
     mcp_slave_deselect();
 }
 
-void mcp_write(uint16_t address, uint8_t * buffer, uint8_t size){
+void mcp_ram_read(uint16_t address, uint8_t * buffer, uint8_t size){
+    mcp_read(address, buffer, size);
+}
+
+void mcp_ram_write(uint16_t address, uint8_t * buffer, uint8_t size){
     uint8_t header[2] = {0};
     header[0] = (uint8_t)(COMMAND_WRITE << 4) | (uint8_t)(address >> 8);
     header[1] = (uint8_t)(address);
