@@ -39,6 +39,7 @@ static void     mcp_slave_deselect();
 static void     mcp_reset();
 static void     mcp_mode_set(uint8_t mode, uint8_t kill_tx, uint8_t keep_sharing);
 static void     mcp_clock_bypass_init();
+static void     mcp_gpio_init();
 
 static uint8_t  mcp_reg_get(uint16_t address, uint8_t byte_number);
 static void     mcp_reg_set(uint16_t address, uint8_t byte_number, uint8_t value);
@@ -97,6 +98,17 @@ static void mcp_mode_set(uint8_t mode, uint8_t kill_tx, uint8_t keep_sharing){
 
 static void mcp_clock_bypass_init(){
     mcp_reg_set(SFR_OSC, 0, 0x00);
+}
+
+static void mcp_gpio_init(){
+    /* Use GPIO pins as GPIO */
+    mcp_reg_set(SFR_IOCON, 3, 0x03);
+
+    /* Drive GPIO pins low */
+    mcp_reg_set(SFR_IOCON, 1, 0x00);
+
+    /* Set GPIO0 as output */
+    mcp_reg_set(SFR_IOCON, 0, 0x02);
 }
 
 static uint8_t mcp_reg_get(uint16_t address, uint8_t byte_number){
@@ -267,6 +279,7 @@ void mcp_init(MCP_MasterConfig * p_config){
     mcp_clock_bypass_init();
 
     /* Configure IOCON for GPIO */
+    mcp_gpio_init();
 
     /* 500 kbps nominal bit rate */
     /* mcp_nominal_bit_time_init(31, 9); */
@@ -295,6 +308,14 @@ void mcp_init(MCP_MasterConfig * p_config){
     mcp_reg_set(C1FLTCON0, 0, 0x81);
 
     mcp_mode_set(MODE_EXTERNAL_LOOPBACK, 1, 1);
+}
+
+void mcp_gpio_latch(){
+    mcp_reg_set(SFR_IOCON, 1, 0x01);
+}
+
+void mcp_gpio_unlatch(){
+    mcp_reg_set(SFR_IOCON, 1, 0x00);
 }
 
 uint8_t mcp_send(MCP_Message * p_msg){

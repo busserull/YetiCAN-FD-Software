@@ -76,6 +76,10 @@ typedef struct {
 
 void mcp_init(MCP_MasterConfig * p_config);
 
+void mcp_gpio_latch();
+
+void mcp_gpio_unlatch();
+
 uint8_t mcp_send(MCP_Message * p_transmit_object);
 
 uint8_t mcp_transmit_event_get(uint32_t * p_sequence, uint32_t * p_timestamp);

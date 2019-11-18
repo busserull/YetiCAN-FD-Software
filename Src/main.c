@@ -152,6 +152,9 @@ int main(void)
         .p_data = data
     };
 
+    mcp_gpio_latch();
+    mcp_gpio_unlatch();
+
   while (1)
   {
     MCP_Message receive_object;
