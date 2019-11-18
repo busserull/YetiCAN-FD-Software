@@ -40,9 +40,19 @@ typedef struct {
     uint8_t use_timestamp;
 } MCP_FifoConfig;
 
+typedef enum {
+    MCP_FILTER_ACCEPT_STANDARD_ONLY,
+    MCP_FILTER_ACCEPT_EXTENDED_ONLY,
+    MCP_FILTER_ACCEPT_ANY
+} MCP_FilterFrameType;
+
 typedef struct {
     uint8_t use_filter;
     uint8_t fifo_destination;
+
+    MCP_FilterFrameType frame_type;
+    uint32_t filter_mask;
+    uint32_t filter_object;
 } MCP_FilterConfig;
 
 typedef struct {

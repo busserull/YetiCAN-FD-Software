@@ -131,7 +131,10 @@ int main(void)
       .filter_config = {
           {
               .use_filter = 1,
-              .fifo_destination = 1
+              .fifo_destination = 1,
+              .frame_type = MCP_FILTER_ACCEPT_ANY,
+              .filter_mask = 0,
+              .filter_object = 0
           }
       }
   };
@@ -149,7 +152,7 @@ int main(void)
     MCP_Message object = {
         .use_fd_format = 1,
         .use_bit_rate_switch = 0,
-        .use_extended_id = 0,
+        .use_extended_id = 1,
         .error_active = 1,
 
         .frame_id = 0x7babe,

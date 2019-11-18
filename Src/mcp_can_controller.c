@@ -299,12 +299,45 @@ void mcp_init(MCP_MasterConfig * p_config){
     }
 
     for(int i = 0; i < MCP_NUMBER_OF_FIFOS; i++){
-        uint32_t spacing = C1FLTCON1 - C1FLTCON0;
-        uint32_t filter_register = C1FLTCON0 + (i / 4) * spacing;
+        /* Disable filter to configure */
+        uint32_t filter_spacing = C1FLTCON1 - C1FLTCON0;
+        uint32_t filter_register = C1FLTCON0 + (i / 4) * filter_spacing;
 
         uint8_t disable_filter = 0x00;
         mcp_reg_set(filter_register, i % 4, disable_filter);
 
+        /* Set filter mask */
+        uint32_t mask_spacing = C1MASK1 - C1MASK0;
+        uint32_t mask_register = C1MASK0 + i * mask_spacing;
+        uint32_t filter_mask = p_config->filter_config[i].filter_mask;
+
+        MCP_FilterFrameType frame_type = p_config->filter_config[i].frame_type;
+        uint8_t frame_mask = 0
+            | ((frame_type != MCP_FILTER_ACCEPT_ANY) ? 0x40 : 0x00)
+            | ((filter_mask >> 24) & 0x1f)
+            ;
+
+        mcp_reg_set(mask_register, 0, (uint8_t)(filter_mask));
+        mcp_reg_set(mask_register, 1, (uint8_t)(filter_mask >> 8));
+        mcp_reg_set(mask_register, 2, (uint8_t)(filter_mask >> 16));
+        mcp_reg_set(mask_register, 3, frame_mask);
+
+        /* Set filter object */
+        uint32_t object_spacing = C1FLTOBJ1 - C1FLTOBJ0;
+        uint32_t object_register = C1FLTOBJ0 + i * object_spacing;
+        uint32_t filter_object = p_config->filter_config[i].filter_object;
+
+        uint8_t frame_object = 0
+            | ((frame_type == MCP_FILTER_ACCEPT_EXTENDED_ONLY) ? 0x40 : 0x00)
+            | ((filter_object >> 24) & 0x1f)
+            ;
+
+        mcp_reg_set(object_register, 0, (uint8_t)(filter_object));
+        mcp_reg_set(object_register, 1, (uint8_t)(filter_object >> 8));
+        mcp_reg_set(object_register, 2, (uint8_t)(filter_object >> 16));
+        mcp_reg_set(object_register, 3, frame_object);
+
+        /* Set FIFO destination and enable filter */
         uint8_t filter_setting = 0
             | (p_config->filter_config[i].use_filter ? 0x80 : 0x00)
             | (p_config->filter_config[i].fifo_destination)
