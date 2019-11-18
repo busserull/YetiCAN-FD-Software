@@ -259,7 +259,7 @@ void mcp_data_bit_time_init(uint8_t seg1, uint8_t seg2){
     mcp_reg_set(C1DBTCFG, 0, sync_jump_width);
 }
 
-void mcp_init(){
+void mcp_init(MCP_MasterConfig * p_config){
     mcp_reset();
 
     mcp_mode_set(MODE_CONFIGURATION, 1, 1);
@@ -269,30 +269,26 @@ void mcp_init(){
     /* Configure IOCON for GPIO */
 
     /* 500 kbps nominal bit rate */
-    mcp_nominal_bit_time_init(31, 9);
+    /* mcp_nominal_bit_time_init(31, 9); */
+    mcp_nominal_bit_time_init(
+        p_config->nominal_bit_rate_seg1,
+        p_config->nominal_bit_rate_seg2
+    );
 
     /* 1 Mbps data bit rate */
     /* 500 kbps data bit rate */
-    mcp_data_bit_time_init(31, 9);
+    mcp_data_bit_time_init(
+        p_config->data_bit_rate_seg1,
+        p_config->data_bit_rate_seg2
+    );
 
-    MCP_FifoConfig tef_config = {
-        .message_depth = 5,
-        .use_timestamp = 1
-    };
-    mcp_tef_init(&tef_config);
+    mcp_tef_init(&(p_config->transmit_event_config));
 
-    MCP_FifoConfig txq_config = {
-        .payload_size = MCP_PAYLOAD_64_BYTES,
-        .message_depth = 5
-    };
-    mcp_txq_init(&txq_config);
+    mcp_txq_init(&(p_config->transmit_queue_config));
 
-    MCP_FifoConfig fifo_config = {
-        .payload_size = MCP_PAYLOAD_64_BYTES,
-        .message_depth = 6,
-        .use_timestamp = 1,
-    };
-    mcp_fifo_init(1, &fifo_config);
+    for(int i = 0; i < 31; i++){
+        mcp_fifo_init(i + 1, &(p_config->receive_fifo_config[i]));
+    }
 
     mcp_reg_set(C1FLTCON0, 0, 0x00);
     mcp_reg_set(C1FLTCON0, 0, 0x01);

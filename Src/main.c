@@ -103,7 +103,33 @@ int main(void)
 
 
   /* mcp_init(); */
-  mcp_init();
+  MCP_MasterConfig mcp_master_config = {
+      .nominal_bit_rate_seg1 = 31,
+      .nominal_bit_rate_seg2 = 9,
+
+      .data_bit_rate_seg1 = 31,
+      .data_bit_rate_seg2 = 9,
+
+      .transmit_event_config = {
+          .message_depth = 5,
+          .use_timestamp = 1
+      },
+
+      .transmit_queue_config = {
+          .payload_size = MCP_PAYLOAD_64_BYTES,
+          .message_depth = 6
+      },
+
+      .receive_fifo_config = {
+          {
+              .payload_size = MCP_PAYLOAD_64_BYTES,
+              .message_depth = 6,
+              .use_timestamp = 1
+          }
+      }
+  };
+
+  mcp_init(&mcp_master_config);
 
   MX_USB_DEVICE_Init();
   /* USER CODE END 2 */

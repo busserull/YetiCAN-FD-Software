@@ -40,6 +40,19 @@ typedef struct {
 } MCP_FifoConfig;
 
 typedef struct {
+    uint32_t nominal_bit_rate_seg1;
+    uint32_t nominal_bit_rate_seg2;
+
+    uint32_t data_bit_rate_seg1;
+    uint32_t data_bit_rate_seg2;
+
+    MCP_FifoConfig transmit_event_config;
+    MCP_FifoConfig transmit_queue_config;
+
+    MCP_FifoConfig receive_fifo_config[31];
+} MCP_MasterConfig;
+
+typedef struct {
     /* TX RX */
     uint8_t use_fd_format;
     uint8_t use_bit_rate_switch;
@@ -61,7 +74,7 @@ typedef struct {
 } MCP_Message;
 
 
-void mcp_init();
+void mcp_init(MCP_MasterConfig * p_config);
 
 uint8_t mcp_send(MCP_Message * p_transmit_object);
 
