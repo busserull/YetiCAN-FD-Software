@@ -1,5 +1,6 @@
 #include "mcp_can_controller.h"
 #include "stm32f0xx_hal.h"
+#include <stdlib.h>
 
 #define COMMAND_READ             0x03
 #define COMMAND_WRITE            0x02
@@ -31,27 +32,28 @@ extern SPI_HandleTypeDef g_spi1_handle;
 static uint8_t m_tef_timestamp_enabled = 0;
 static uint8_t m_fifo_timestamp_enabled[31] = {0};
 
-typedef enum {
-    PAYLOAD_08_BYTES = 0x00,
-    PAYLOAD_12_BYTES = 0x01,
-    PAYLOAD_16_BYTES = 0x02,
-    PAYLOAD_20_BYTES = 0x03,
-    PAYLOAD_24_BYTES = 0x04,
-    PAYLOAD_32_BYTES = 0x05,
-    PAYLOAD_48_BYTES = 0x06,
-    PAYLOAD_64_BYTES = 0x07
-} PayloadSize;
 
-static void mcp_slave_select();
-static void mcp_slave_deselect();
-static void mcp_reset();
-static void mcp_mode_set(uint8_t mode, uint8_t kill_tx, uint8_t keep_sharing);
-static void mcp_clock_bypass_init();
-static uint8_t mcp_reg_get(uint16_t address, uint8_t byte_number);
-static void mcp_reg_set(uint16_t address, uint8_t byte_number, uint8_t value);
-static void mcp_tef_init(uint8_t message_depth, uint8_t use_timestamp);
-static void mcp_txq_init(PayloadSize payload_size, uint8_t message_depth);
+static void     mcp_slave_select();
+static void     mcp_slave_deselect();
 
+static void     mcp_reset();
+static void     mcp_mode_set(uint8_t mode, uint8_t kill_tx, uint8_t keep_sharing);
+static void     mcp_clock_bypass_init();
+
+static uint8_t  mcp_reg_get(uint16_t address, uint8_t byte_number);
+static void     mcp_reg_set(uint16_t address, uint8_t byte_number, uint8_t value);
+
+static uint32_t mcp_user_address_get(uint16_t ua_register);
+
+static void     mcp_ram_read(uint16_t address, uint8_t * buffer, uint8_t size);
+static void     mcp_ram_write(uint16_t address, uint8_t * buffer, uint8_t size);
+
+static void     mcp_tef_init(MCP_FifoConfig * p_config);
+static void     mcp_txq_init(MCP_FifoConfig * p_config);
+static void     mcp_fifo_init(uint8_t fifo, MCP_FifoConfig * p_config);
+
+static void     mcp_nominal_bit_time_init(uint8_t seg1, uint8_t seg2);
+static void     mcp_data_bit_time_init(uint8_t seg1, uint8_t seg2);
 
 
 static void mcp_slave_select(){
@@ -123,15 +125,48 @@ static void mcp_reg_set(uint16_t address, uint8_t byte_number, uint8_t value){
     mcp_slave_deselect();
 }
 
-static void mcp_tef_init(uint8_t message_depth, uint8_t use_timestamp){
+static uint32_t mcp_user_address_get(uint16_t ua_register){
+    uint32_t address = 0
+        | (mcp_reg_get(ua_register, 0))
+        | (mcp_reg_get(ua_register, 1) << 8)
+        | (mcp_reg_get(ua_register, 2) << 16)
+        | (mcp_reg_get(ua_register, 3) << 24)
+        ;
+
+    return address + 0x400;
+}
+
+static void mcp_ram_read(uint16_t address, uint8_t * buffer, uint8_t size){
+    uint8_t header[2] = {0};
+    header[0] = (uint8_t)(COMMAND_READ << 4) | (uint8_t)(address >> 8);
+    header[1] = (uint8_t)(address);
+
+    mcp_slave_select();
+    HAL_SPI_Transmit(&g_spi1_handle, header, 2, MCP_SPI_TIMEOUT);
+    HAL_SPI_Receive(&g_spi1_handle, buffer, size, MCP_SPI_TIMEOUT);
+    mcp_slave_deselect();
+}
+
+static void mcp_ram_write(uint16_t address, uint8_t * buffer, uint8_t size){
+    uint8_t header[2] = {0};
+    header[0] = (uint8_t)(COMMAND_WRITE << 4) | (uint8_t)(address >> 8);
+    header[1] = (uint8_t)(address);
+
+    mcp_slave_select();
+    HAL_SPI_Transmit(&g_spi1_handle, header, 2, MCP_SPI_TIMEOUT);
+    HAL_SPI_Transmit(&g_spi1_handle, buffer, size, MCP_SPI_TIMEOUT);
+    mcp_slave_deselect();
+}
+
+static void mcp_tef_init(MCP_FifoConfig * p_config){
     uint8_t enable_tef = mcp_reg_get(C1CON, 2) | 0x08;
     mcp_reg_set(C1CON, 2, enable_tef);
 
-    mcp_reg_set(C1TEFCON, 3, message_depth - 1);
+    mcp_reg_set(C1TEFCON, 3, p_config->message_depth - 1);
 
-    uint8_t timestamp = use_timestamp ? 0x20 : 0x00;
+    uint8_t timestamp = p_config->use_timestamp ? 0x20 : 0x00;
     mcp_reg_set(C1TEFCON, 0, timestamp);
-    m_tef_timestamp_enabled = use_timestamp;
+    m_tef_timestamp_enabled = p_config->use_timestamp;
 
     uint8_t reset_fifo = 0x04;
     mcp_reg_set(C1TEFCON, 1, reset_fifo);
@@ -144,11 +179,15 @@ static void mcp_tef_init(uint8_t message_depth, uint8_t use_timestamp){
     } while(tef_busy && timeout);
 }
 
-static void mcp_txq_init(PayloadSize payload_size, uint8_t message_depth){
+static void mcp_txq_init(MCP_FifoConfig * p_config){
     uint8_t enable_txq = mcp_reg_get(C1CON, 2) | 0x10;
     mcp_reg_set(C1CON, 2, enable_txq);
 
-    uint8_t size = ((uint8_t)(payload_size) << 5) | (message_depth - 1);
+    uint8_t size = 0
+        | ((uint8_t)(p_config->payload_size) << 5)
+        | (p_config->message_depth - 1)
+        ;
+
     mcp_reg_set(C1TXQCON, 3, size);
 
     uint8_t unlimited_retransmission_attempts = 0x60;
@@ -165,15 +204,7 @@ static void mcp_txq_init(PayloadSize payload_size, uint8_t message_depth){
     } while(txq_busy && timeout);
 }
 
-static uint32_t mcp_user_address_get(uint16_t ua_register);
-
-typedef struct {
-    PayloadSize payload_size;
-    uint8_t message_depth;
-    uint8_t use_timestamp;
-} MCP_FifoConfig;
-
-static void mcp_fifo_init_recv(uint8_t fifo, MCP_FifoConfig * p_config){
+static void mcp_fifo_init(uint8_t fifo, MCP_FifoConfig * p_config){
     uint32_t fifo_spacing = C1FIFOCON2 - C1FIFOCON1;
     uint32_t fifo_address = C1FIFOCON1 + (fifo - 1) * fifo_spacing;
 
@@ -187,7 +218,7 @@ static void mcp_fifo_init_recv(uint8_t fifo, MCP_FifoConfig * p_config){
     /* Reserve space in RAM */
     uint8_t size = 0
         | ((uint8_t)(p_config->payload_size) << 5)
-        | (p_config->message_depth)
+        | (p_config->message_depth - 1)
         ;
 
     mcp_reg_set(fifo_address, 3, size);
@@ -205,71 +236,6 @@ static void mcp_fifo_init_recv(uint8_t fifo, MCP_FifoConfig * p_config){
 
 
 
-#include <stdlib.h>
-uint8_t mcp_fifo_read(MCP_Message * p_msg, uint8_t fifo_number){
-    /* Check for messages */
-    uint32_t spacing = C1FIFOSTA2 - C1FIFOSTA1;
-    uint32_t status_register = C1FIFOSTA1 + (fifo_number - 1) * spacing;
-
-    if(!(mcp_reg_get(status_register, 0) & 0x01)){
-        return 1;
-    }
-
-    /* Get Receive Object address */
-    spacing = C1FIFOUA2 - C1FIFOUA1;
-    uint32_t ua_register = C1FIFOUA1 + (fifo_number - 1) * spacing;
-    uint32_t head_address = mcp_user_address_get(ua_register);
-
-    /* Construct Receive Object header */
-    uint8_t object_header[12] = {0};
-    mcp_ram_read(head_address, object_header, 12);
-
-    p_msg->frame_id = 0
-        | (object_header[0])
-        | (object_header[1] << 8)
-        | (object_header[2] << 16)
-        | (object_header[3] << 24) & 0x1f
-        ;
-
-    p_msg->use_fd_format = (object_header[4] & 0x80) ? 1 : 0;
-    p_msg->use_bit_rate_switch = (object_header[4] & 0x40) ? 1 : 0;
-    p_msg->use_extended_id = (object_header[4] & 0x10) ? 1 : 0;
-    p_msg->data_length = object_header[4] & 0x0f;
-
-    p_msg->error_active = object_header[5] & 0x01;
-    p_msg->filter_hit = object_header[5] >> 3;
-
-    p_msg->timestamp = 0
-        | (object_header[8])
-        | (object_header[9] << 8)
-        | (object_header[10] << 16)
-        | (object_header[11] << 24)
-        ;
-
-    /* Copy Object data */
-    uint32_t data_address;
-    if(m_fifo_timestamp_enabled[fifo_number - 1]){
-        data_address = head_address + 12;
-        p_msg->timestamp_valid = 1;
-    }
-    else{
-        data_address = head_address + 8;
-        p_msg->timestamp_valid = 0;
-    }
-
-    uint8_t data_length = object_header[4] & 0x0f;
-    uint8_t * buffer = (uint8_t *)malloc(data_length * sizeof(uint8_t));
-    mcp_ram_read(data_address, buffer, data_length);
-
-    p_msg->p_data = buffer;
-
-    /* Clear packet from RAM */
-    spacing = C1FIFOCON2 - C1FIFOCON1;
-    uint32_t control_reg = C1FIFOCON1 + (fifo_number - 1) * spacing;
-    mcp_reg_set(control_reg, 1, 0x01);
-
-    return 0;
-}
 
 void mcp_nominal_bit_time_init(uint8_t seg1, uint8_t seg2){
     /* Baud rate prescaler = 1 */
@@ -309,17 +275,24 @@ void mcp_init(){
     /* 500 kbps data bit rate */
     mcp_data_bit_time_init(31, 9);
 
-    mcp_tef_init(5, 1);
+    MCP_FifoConfig tef_config = {
+        .message_depth = 5,
+        .use_timestamp = 1
+    };
+    mcp_tef_init(&tef_config);
 
-    mcp_txq_init(PAYLOAD_64_BYTES, 5);
+    MCP_FifoConfig txq_config = {
+        .payload_size = MCP_PAYLOAD_64_BYTES,
+        .message_depth = 5
+    };
+    mcp_txq_init(&txq_config);
 
     MCP_FifoConfig fifo_config = {
-        .payload_size = PAYLOAD_64_BYTES,
+        .payload_size = MCP_PAYLOAD_64_BYTES,
         .message_depth = 6,
         .use_timestamp = 1,
     };
-    mcp_fifo_init_recv(1, &fifo_config);
-    /* mcp_fifo_init_recv(1, &fifo_config); */
+    mcp_fifo_init(1, &fifo_config);
 
     mcp_reg_set(C1FLTCON0, 0, 0x00);
     mcp_reg_set(C1FLTCON0, 0, 0x01);
@@ -327,30 +300,6 @@ void mcp_init(){
 
     mcp_mode_set(MODE_EXTERNAL_LOOPBACK, 1, 1);
 }
-
-typedef struct {
-    uint8_t use_fd_format;
-    uint8_t use_bit_rate_switch;
-    uint8_t use_extended_id;
-    uint32_t frame_id;
-    uint32_t sequence_number;
-    MCP_FrameDataLength data_length;
-    uint8_t * p_data;
-} TransmitObject;
-
-
-static uint32_t mcp_user_address_get(uint16_t ua_register){
-    uint32_t address = 0
-        | (mcp_reg_get(ua_register, 0))
-        | (mcp_reg_get(ua_register, 1) << 8)
-        | (mcp_reg_get(ua_register, 2) << 16)
-        | (mcp_reg_get(ua_register, 3) << 24)
-        ;
-
-    return address + 0x400;
-}
-
-uint8_t mcp_receive();
 
 uint8_t mcp_send(MCP_Message * p_msg){
     /* Check for space in TXQ */
@@ -394,74 +343,98 @@ uint8_t mcp_send(MCP_Message * p_msg){
     return 0;
 }
 
-uint8_t mcp_check_transmit_event(MCP_TransmitEvent * p_te){
+uint8_t mcp_transmit_event_get(uint32_t * p_sequence, uint32_t * p_timestamp){
     /* Check for Transmit Event Objects */
-    uint8_t tef_empty = !(mcp_reg_get(C1TEFSTA, 0) & 0x01);
-    if(tef_empty){
+    if(!(mcp_reg_get(C1TEFSTA, 0) & 0x01)){
         return 1;
     }
 
-    /* Read Transmit Event Object */
-    uint32_t tef_object_address = mcp_user_address_get(C1TEFUA);
-    uint8_t tef_object[12] = {0};
-    mcp_read(tef_object_address, tef_object, 12);
+    /* Read Transmit Event Object, skip frame ID */
+    uint32_t event_address = mcp_user_address_get(C1TEFUA) + 8;
+    uint8_t event[8] = {0};
+    mcp_ram_read(event_address, event, 8);
 
-    /* Clear Transmit Event Object from controller */
+    /* Clear Transmit Event from RAM */
     mcp_reg_set(C1TEFCON, 1, 0x01);
 
-    /* Translate data */
-    p_te->fd_enabled = (tef_object[7] & 0x80) ? 1 : 0;
-    p_te->bit_rate_switch_enabled = (tef_object[7] & 0x40) ? 1 : 0;
-    p_te->extended_id_enabled = (tef_object[7] & 0x10) ? 1 : 0;
-
-    p_te->frame_id = 0
-        | (tef_object[3])
-        | ((tef_object[2] & 0x07) << 8)
+    /* Construct sequence number and timestamp */
+    *p_sequence = 0
+        | (event[1] >> 1)
+        | (event[2] << 7)
+        | (event[3] << 15)
         ;
 
-    p_te->sequence_number = 0
-        | (tef_object[6] >> 1)
-        | (tef_object[5] << 7)
-        | (tef_object[4] << 15)
-        ;
-
-    p_te->data_length = (MCP_FrameDataLength)(tef_object[7] & 0x0f);
-
-    p_te->timestamp_enabled = m_tef_timestamp_enabled;
-    p_te->timestamp = 0
-        | (tef_object[11])
-        | (tef_object[10] << 8)
-        | (tef_object[ 9] << 16)
-        | (tef_object[ 8] << 24)
+    *p_timestamp = 0
+        | (event[4])
+        | (event[5] << 8)
+        | (event[6] << 16)
+        | (event[7] << 24)
         ;
 
     return 0;
 }
 
+uint8_t mcp_receive(MCP_Message * p_msg, uint8_t fifo_number){
+    /* Check for messages */
+    uint32_t spacing = C1FIFOSTA2 - C1FIFOSTA1;
+    uint32_t status_register = C1FIFOSTA1 + (fifo_number - 1) * spacing;
 
+    if(!(mcp_reg_get(status_register, 0) & 0x01)){
+        return 1;
+    }
 
-void mcp_read(uint16_t address, uint8_t * buffer, uint8_t size){
-    uint8_t header[2] = {0};
-    header[0] = (uint8_t)(COMMAND_READ << 4) | (uint8_t)(address >> 8);
-    header[1] = (uint8_t)(address);
+    /* Get Receive Object address */
+    spacing = C1FIFOUA2 - C1FIFOUA1;
+    uint32_t ua_register = C1FIFOUA1 + (fifo_number - 1) * spacing;
+    uint32_t head_address = mcp_user_address_get(ua_register);
 
-    mcp_slave_select();
-    HAL_SPI_Transmit(&g_spi1_handle, header, 2, MCP_SPI_TIMEOUT);
-    HAL_SPI_Receive(&g_spi1_handle, buffer, size, MCP_SPI_TIMEOUT);
-    mcp_slave_deselect();
-}
+    /* Construct Receive Object header */
+    uint8_t object_header[12] = {0};
+    mcp_ram_read(head_address, object_header, 12);
 
-void mcp_ram_read(uint16_t address, uint8_t * buffer, uint8_t size){
-    mcp_read(address, buffer, size);
-}
+    p_msg->frame_id = 0
+        | (object_header[0])
+        | (object_header[1] << 8)
+        | (object_header[2] << 16)
+        | ((object_header[3] << 24) & 0x1f)
+        ;
 
-void mcp_ram_write(uint16_t address, uint8_t * buffer, uint8_t size){
-    uint8_t header[2] = {0};
-    header[0] = (uint8_t)(COMMAND_WRITE << 4) | (uint8_t)(address >> 8);
-    header[1] = (uint8_t)(address);
+    p_msg->use_fd_format = (object_header[4] & 0x80) ? 1 : 0;
+    p_msg->use_bit_rate_switch = (object_header[4] & 0x40) ? 1 : 0;
+    p_msg->use_extended_id = (object_header[4] & 0x10) ? 1 : 0;
+    p_msg->data_length = object_header[4] & 0x0f;
 
-    mcp_slave_select();
-    HAL_SPI_Transmit(&g_spi1_handle, header, 2, MCP_SPI_TIMEOUT);
-    HAL_SPI_Transmit(&g_spi1_handle, buffer, size, MCP_SPI_TIMEOUT);
-    mcp_slave_deselect();
+    p_msg->error_active = object_header[5] & 0x01;
+    p_msg->filter_hit = object_header[5] >> 3;
+
+    p_msg->timestamp = 0
+        | (object_header[8])
+        | (object_header[9] << 8)
+        | (object_header[10] << 16)
+        | (object_header[11] << 24)
+        ;
+
+    /* Copy Object data */
+    uint32_t data_address;
+    if(m_fifo_timestamp_enabled[fifo_number - 1]){
+        data_address = head_address + 12;
+        p_msg->timestamp_valid = 1;
+    }
+    else{
+        data_address = head_address + 8;
+        p_msg->timestamp_valid = 0;
+    }
+
+    uint8_t data_length = object_header[4] & 0x0f;
+    uint8_t * buffer = (uint8_t *)malloc(data_length * sizeof(uint8_t));
+    mcp_ram_read(data_address, buffer, data_length);
+
+    p_msg->p_data = buffer;
+
+    /* Clear packet from RAM */
+    spacing = C1FIFOCON2 - C1FIFOCON1;
+    uint32_t control_reg = C1FIFOCON1 + (fifo_number - 1) * spacing;
+    mcp_reg_set(control_reg, 1, 0x01);
+
+    return 0;
 }

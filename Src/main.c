@@ -122,7 +122,7 @@ int main(void)
         .frame_id = 0x7babe,
         .sequence_number = 0x55aa55,
 
-        .data_length = DATA_LENGTH_08_BYTES,
+        .data_length = MCP_DATA_LENGTH_08_BYTES,
         .p_data = data
     };
 
@@ -132,14 +132,14 @@ int main(void)
 
     uint8_t fifo_empty = 0;
 
-    fifo_empty = mcp_fifo_read(&receive_object, 1);
+    fifo_empty = mcp_receive(&receive_object, 1);
     if(!fifo_empty){
         free(receive_object.p_data);
     }
 
     mcp_send(&object);
 
-    fifo_empty = mcp_fifo_read(&receive_object, 1);
+    fifo_empty = mcp_receive(&receive_object, 1);
     if(!fifo_empty){
         free(receive_object.p_data);
     }
