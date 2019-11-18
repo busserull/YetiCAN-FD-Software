@@ -1,5 +1,6 @@
 #ifndef MCP_CAN_CONTROLLER_H
 #define MCP_CAN_CONTROLLER_H
+#define MCP_NUMBER_OF_FIFOS 31
 
 #include <stdint.h>
 
@@ -40,6 +41,11 @@ typedef struct {
 } MCP_FifoConfig;
 
 typedef struct {
+    uint8_t use_filter;
+    uint8_t fifo_destination;
+} MCP_FilterConfig;
+
+typedef struct {
     uint32_t nominal_bit_rate_seg1;
     uint32_t nominal_bit_rate_seg2;
 
@@ -49,7 +55,8 @@ typedef struct {
     MCP_FifoConfig transmit_event_config;
     MCP_FifoConfig transmit_queue_config;
 
-    MCP_FifoConfig receive_fifo_config[31];
+    MCP_FifoConfig receive_fifo_config[MCP_NUMBER_OF_FIFOS];
+    MCP_FilterConfig filter_config[MCP_NUMBER_OF_FIFOS];
 } MCP_MasterConfig;
 
 typedef struct {

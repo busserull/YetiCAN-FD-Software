@@ -126,6 +126,13 @@ int main(void)
               .message_depth = 6,
               .use_timestamp = 1
           }
+      },
+
+      .filter_config = {
+          {
+              .use_filter = 1,
+              .fifo_destination = 1
+          }
       }
   };
 

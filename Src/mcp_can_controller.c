@@ -30,7 +30,7 @@
 extern SPI_HandleTypeDef g_spi1_handle;
 
 static uint8_t m_tef_timestamp_enabled = 0;
-static uint8_t m_fifo_timestamp_enabled[31] = {0};
+static uint8_t m_fifo_timestamp_enabled[MCP_NUMBER_OF_FIFOS] = {0};
 
 
 static void     mcp_slave_select();
@@ -278,18 +278,13 @@ void mcp_init(MCP_MasterConfig * p_config){
 
     mcp_clock_bypass_init();
 
-    /* Configure IOCON for GPIO */
     mcp_gpio_init();
 
-    /* 500 kbps nominal bit rate */
-    /* mcp_nominal_bit_time_init(31, 9); */
     mcp_nominal_bit_time_init(
         p_config->nominal_bit_rate_seg1,
         p_config->nominal_bit_rate_seg2
     );
 
-    /* 1 Mbps data bit rate */
-    /* 500 kbps data bit rate */
     mcp_data_bit_time_init(
         p_config->data_bit_rate_seg1,
         p_config->data_bit_rate_seg2
@@ -299,13 +294,24 @@ void mcp_init(MCP_MasterConfig * p_config){
 
     mcp_txq_init(&(p_config->transmit_queue_config));
 
-    for(int i = 0; i < 31; i++){
+    for(int i = 0; i < MCP_NUMBER_OF_FIFOS; i++){
         mcp_fifo_init(i + 1, &(p_config->receive_fifo_config[i]));
     }
 
-    mcp_reg_set(C1FLTCON0, 0, 0x00);
-    mcp_reg_set(C1FLTCON0, 0, 0x01);
-    mcp_reg_set(C1FLTCON0, 0, 0x81);
+    for(int i = 0; i < MCP_NUMBER_OF_FIFOS; i++){
+        uint32_t spacing = C1FLTCON1 - C1FLTCON0;
+        uint32_t filter_register = C1FLTCON0 + (i / 4) * spacing;
+
+        uint8_t disable_filter = 0x00;
+        mcp_reg_set(filter_register, i % 4, disable_filter);
+
+        uint8_t filter_setting = 0
+            | (p_config->filter_config[i].use_filter ? 0x80 : 0x00)
+            | (p_config->filter_config[i].fifo_destination)
+            ;
+
+        mcp_reg_set(filter_register, i % 4, filter_setting);
+    }
 
     mcp_mode_set(MODE_EXTERNAL_LOOPBACK, 1, 1);
 }
