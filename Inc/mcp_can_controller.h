@@ -41,9 +41,9 @@ typedef struct {
 } MCP_FifoConfig;
 
 typedef enum {
-    MCP_FILTER_ACCEPT_STANDARD_ONLY,
+    MCP_FILTER_ACCEPT_ANY,
     MCP_FILTER_ACCEPT_EXTENDED_ONLY,
-    MCP_FILTER_ACCEPT_ANY
+    MCP_FILTER_ACCEPT_STANDARD_ONLY
 } MCP_FilterFrameType;
 
 typedef struct {
@@ -56,17 +56,17 @@ typedef struct {
 } MCP_FilterConfig;
 
 typedef struct {
-    uint32_t nominal_bit_rate_seg1;
-    uint32_t nominal_bit_rate_seg2;
+    uint8_t nominal_bit_rate_seg1;
+    uint8_t nominal_bit_rate_seg2;
 
-    uint32_t data_bit_rate_seg1;
-    uint32_t data_bit_rate_seg2;
+    uint8_t data_bit_rate_seg1;
+    uint8_t data_bit_rate_seg2;
 
     MCP_FifoConfig transmit_event_config;
     MCP_FifoConfig transmit_queue_config;
 
     MCP_FifoConfig receive_fifo_config[MCP_NUMBER_OF_FIFOS];
-    MCP_FilterConfig filter_config[MCP_NUMBER_OF_FIFOS];
+    MCP_FilterConfig filter_config[MCP_NUMBER_OF_FIFOS + 1];
 } MCP_MasterConfig;
 
 typedef struct {

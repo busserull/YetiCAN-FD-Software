@@ -246,9 +246,6 @@ static void mcp_fifo_init(uint8_t fifo, MCP_FifoConfig * p_config){
     } while(fifo_busy && timeout);
 }
 
-
-
-
 void mcp_nominal_bit_time_init(uint8_t seg1, uint8_t seg2){
     /* Baud rate prescaler = 1 */
     mcp_reg_set(C1NBTCFG, 3, 0x00);
@@ -298,7 +295,7 @@ void mcp_init(MCP_MasterConfig * p_config){
         mcp_fifo_init(i + 1, &(p_config->receive_fifo_config[i]));
     }
 
-    for(int i = 0; i < MCP_NUMBER_OF_FIFOS; i++){
+    for(int i = 0; i < MCP_NUMBER_OF_FIFOS + 1; i++){
         /* Disable filter to configure */
         uint32_t filter_spacing = C1FLTCON1 - C1FLTCON0;
         uint32_t filter_register = C1FLTCON0 + (i / 4) * filter_spacing;
