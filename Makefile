@@ -74,7 +74,8 @@ Middlewares/ST/STM32_USB_Device_Library/Core/Src/usbd_ctlreq.c \
 Middlewares/ST/STM32_USB_Device_Library/Core/Src/usbd_ioreq.c \
 Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Src/usbd_cdc.c \
 Src/packet.c \
-Src/commander.c
+Src/commander.c \
+Src/parse.c
 
 # ASM sources
 ASM_SOURCES =  \
