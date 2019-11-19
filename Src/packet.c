@@ -1,15 +1,20 @@
 #include "packet.h"
 #include "mcp_can_controller.h"
+#include "crc.h"
 
-#define STX               0x02
-#define ETX               0x03
+#define STX                                 0x02
+#define ETX                                 0x03
 
-/* #define TYPE_CONFIG_COMMIT                  0x00 */
+#define TYPE_CONFIG_COMMIT                  0x00
 #define TYPE_CONFIG_BIT_RATE                0x01
 #define TYPE_CONFIG_TRANSMIT_EVENT_FIFO     0x02
 #define TYPE_CONFIG_TRANSMIT_QUEUE          0x03
 #define TYPE_CONFIG_FIFO                    0x04
 #define TYPE_CONFIG_FILTER                  0x05
+
+#define SIZE_TYPE                              1
+#define SIZE_DATA                             64
+#define SIZE_CRC                               4
 
 #define SIZE_CONFIG_BIT_RATE                   4
 #define SIZE_CONFIG_TRANSMIT_EVENT_FIFO        2
@@ -17,33 +22,41 @@
 #define SIZE_CONFIG_FIFO                       4
 #define SIZE_CONFIG_FILTER                    12
 
-#define TYPE_SEND              0x1a
-#define TYPE_BRIDGE            0x96
-#define TYPE_STATUS            0x68
-#define TYPE_FAULT             0xff
+#define TYPE_SEND                           0x1a
+#define TYPE_BRIDGE                         0x96
+#define TYPE_STATUS                         0x68
+#define TYPE_FAULT                          0xff
+
+typedef enum {
+    FAULT_CRC,
+    FAULT_CONFIG,
+    FAULT_MALFORMED
+} Packet_Fault;
 
 extern MCP_MasterConfig g_mcp_master_config;
 
 
 static void     packet_transition_ok();
-static void     packet_transition_fault();
+static void     packet_transition_fault(Packet_Fault fault);
 
-static uint8_t  packet_buffer(uint8_t size, uint8_t byte);
+static uint8_t  packet_buffer(uint8_t byte);
 
 static void     packet_accept_stx(uint8_t byte);
 static void     packet_accept_type(uint8_t byte);
 
+static void     packet_accept_data(uint8_t byte);
+
+static void     packet_accept_crc(uint8_t byte);
+static void     packet_accept_etx(uint8_t byte);
+
 /* static void     packet_accept_length(uint8_t byte); */
-/* static void     packet_accept_data(uint8_t byte); */
 
-/* static void     packet_accept_crc(uint8_t byte); */
-/* static void     packet_accept_etx(uint8_t byte); */
-
-static void     packet_accept_config_bit_rate(uint8_t byte);
-static void     packet_accept_config_tef(uint8_t byte);
-static void     packet_accept_config_txq(uint8_t byte);
-static void     packet_accept_config_fifo(uint8_t byte);
-static void     packet_accept_config_filter(uint8_t byte);
+static void     packet_config_commit();
+static void     packet_config_bit_rate();
+static void     packet_config_tef();
+static void     packet_config_txq();
+static void     packet_config_fifo();
+static void     packet_config_filter();
 
 static uint8_t  packet_parse_bit_rate(uint8_t offset, uint8_t * p_seg1, uint8_t * p_seg2);
 static uint8_t  packet_parse_flag(uint8_t offset, uint8_t * p_use_timestamp);
@@ -56,8 +69,11 @@ static uint8_t  packet_parse_mask_or_object(uint8_t offset, uint32_t * p_mask_or
 
 
 static void (* m_packet_builder_state)(uint8_t) = packet_accept_stx;
-static uint32_t m_expected_data = 0;
-static uint8_t m_packet_buffer[64] = {0};
+static void (* m_after_data_action)() = NULL;
+
+static uint8_t m_expected_data = 0;
+static uint8_t m_packet_buffer_index = 0;
+static uint8_t m_packet_buffer[SIZE_TYPE + SIZE_DATA + SIZE_CRC] = {0};
 
 
 
@@ -71,18 +87,22 @@ static void packet_transition_ok(){
     uint8_t buffer[] = "OK\n\r";
     CDC_Transmit_FS(buffer, 4);
 
+    m_packet_buffer_index = 0;
     m_packet_builder_state = packet_accept_stx;
 }
 
-static void packet_transition_fault(){
+static void packet_transition_fault(Packet_Fault fault){
+    (void)(fault);
     uint8_t buffer[] = "ERR\n\r";
     CDC_Transmit_FS(buffer, 5);
 
+    m_packet_buffer_index = 0;
     m_packet_builder_state = packet_accept_stx;
 }
 
-static uint8_t packet_buffer(uint8_t size, uint8_t byte){
-    m_packet_buffer[size - m_expected_data] = byte;
+static uint8_t packet_buffer(uint8_t byte){
+    m_packet_buffer[m_packet_buffer_index] = byte;
+    m_packet_buffer_index++;
     m_expected_data--;
 
     return m_expected_data;
@@ -96,74 +116,132 @@ static void packet_accept_stx(uint8_t byte){
             break;
 
         default:
-            m_packet_builder_state = packet_accept_stx;
             break;
     }
 }
 
 static void packet_accept_type(uint8_t byte){
+    packet_buffer(byte);
+
     switch(byte){
+        case TYPE_CONFIG_COMMIT:
+            m_after_data_action = packet_config_commit;
+            m_expected_data = SIZE_CRC;
+            m_packet_builder_state = packet_accept_crc;
+            break;
+
         case TYPE_CONFIG_BIT_RATE:
+            m_after_data_action = packet_config_bit_rate;
             m_expected_data = SIZE_CONFIG_BIT_RATE;
-            m_packet_builder_state = packet_accept_config_bit_rate;
+            m_packet_builder_state = packet_accept_data;
             break;
 
         case TYPE_CONFIG_TRANSMIT_EVENT_FIFO:
+            m_after_data_action = packet_config_tef;
             m_expected_data = SIZE_CONFIG_TRANSMIT_EVENT_FIFO;
-            m_packet_builder_state = packet_accept_config_tef;
+            m_packet_builder_state = packet_accept_data;
             break;
 
         case TYPE_CONFIG_TRANSMIT_QUEUE:
+            m_after_data_action = packet_config_txq;
             m_expected_data = SIZE_CONFIG_TRANSMIT_QUEUE;
-            m_packet_builder_state = packet_accept_config_txq;
+            m_packet_builder_state = packet_accept_data;
             break;
 
         case TYPE_CONFIG_FIFO:
+            m_after_data_action = packet_config_fifo;
             m_expected_data = SIZE_CONFIG_FIFO;
-            m_packet_builder_state = packet_accept_config_fifo;
+            m_packet_builder_state = packet_accept_data;
             break;
 
         case TYPE_CONFIG_FILTER:
+            m_after_data_action = packet_config_filter;
             m_expected_data = SIZE_CONFIG_FILTER;
-            m_packet_builder_state = packet_accept_config_filter;
+            m_packet_builder_state = packet_accept_data;
             break;
 
         default:
-            m_packet_builder_state = packet_accept_stx;
+            packet_transition_fault(FAULT_MALFORMED);
+            break;
     }
 }
 
-static void packet_accept_config_bit_rate(uint8_t byte){
-    if(packet_buffer(SIZE_CONFIG_BIT_RATE, byte)){
+static void packet_accept_data(uint8_t byte){
+    switch(packet_buffer(byte)){
+        case 0:
+            m_expected_data = SIZE_CRC;
+            m_packet_builder_state = packet_accept_crc;
+            break;
+
+        default:
+            break;
+    }
+}
+
+static void packet_accept_crc(uint8_t byte){
+    if(packet_buffer(byte)){
         return;
     }
 
+    m_packet_builder_state = packet_accept_etx;
+}
+
+static void packet_accept_etx(uint8_t byte){
+    if(byte != ETX){
+        packet_transition_fault(FAULT_MALFORMED);
+        return;
+    }
+
+    uint8_t crc_index = m_packet_buffer_index - SIZE_CRC;
+
+    uint32_t received_crc = 0
+        | (m_packet_buffer[crc_index + 0] << 24)
+        | (m_packet_buffer[crc_index + 1] << 16)
+        | (m_packet_buffer[crc_index + 2] << 8)
+        | (m_packet_buffer[crc_index + 3] << 0)
+        ;
+
+    uint32_t computed_crc = crc_calculate(m_packet_buffer, crc_index);
+
+    if(received_crc != computed_crc){
+        packet_transition_fault(FAULT_CRC);
+        return;
+    }
+
+    if(m_after_data_action != NULL){
+        m_after_data_action();
+    }
+}
+
+static void packet_config_commit(){
+    mcp_init(&g_mcp_master_config);
+
+    packet_transition_ok();
+}
+
+static void packet_config_bit_rate(){
     uint8_t seg1, seg2;
 
-    packet_parse_bit_rate(0, &seg1, &seg2);
+    packet_parse_bit_rate(1, &seg1, &seg2);
     g_mcp_master_config.nominal_bit_rate_seg1 = seg1;
     g_mcp_master_config.nominal_bit_rate_seg2 = seg2;
 
-    packet_parse_bit_rate(2, &seg1, &seg2);
+    packet_parse_bit_rate(3, &seg1, &seg2);
     g_mcp_master_config.data_bit_rate_seg1 = seg1;
     g_mcp_master_config.data_bit_rate_seg2 = seg2;
 
     packet_transition_ok();
 }
 
-static void packet_accept_config_tef(uint8_t byte){
-    if(packet_buffer(SIZE_CONFIG_TRANSMIT_EVENT_FIFO, byte)){
-        return;
-    }
-
+static void packet_config_tef(){
     uint8_t message_depth, use_timestamp;
 
-    if(packet_parse_message_depth(0, &message_depth)){
-        packet_transition_fault();
+    if(packet_parse_message_depth(1, &message_depth)){
+        packet_transition_fault(FAULT_CONFIG);
         return;
     }
-    if(packet_parse_flag(1, &use_timestamp)){
-        packet_transition_fault();
+    if(packet_parse_flag(2, &use_timestamp)){
+        packet_transition_fault(FAULT_CONFIG);
         return;
     }
 
@@ -173,20 +251,16 @@ static void packet_accept_config_tef(uint8_t byte){
     packet_transition_ok();
 }
 
-static void packet_accept_config_txq(uint8_t byte){
-    if(packet_buffer(SIZE_CONFIG_TRANSMIT_QUEUE, byte)){
-        return;
-    }
-
+static void packet_config_txq(){
     MCP_PayloadSize payload_size;
     uint8_t message_depth;
 
-    if(packet_parse_payload_size(0, &payload_size)){
-        packet_transition_fault();
+    if(packet_parse_payload_size(1, &payload_size)){
+        packet_transition_fault(FAULT_CONFIG);
         return;
     }
-    if(packet_parse_message_depth(1, &message_depth)){
-        packet_transition_fault();
+    if(packet_parse_message_depth(2, &message_depth)){
+        packet_transition_fault(FAULT_CONFIG);
         return;
     }
 
@@ -196,28 +270,24 @@ static void packet_accept_config_txq(uint8_t byte){
     packet_transition_ok();
 }
 
-static void packet_accept_config_fifo(uint8_t byte){
-    if(packet_buffer(SIZE_CONFIG_FIFO, byte)){
-        return;
-    }
-
+static void packet_config_fifo(){
     MCP_PayloadSize payload_size;
     uint8_t fifo, message_depth, use_timestamp;
 
-    if(packet_parse_fifo_number(0, &fifo)){
-        packet_transition_fault();
+    if(packet_parse_fifo_number(1, &fifo)){
+        packet_transition_fault(FAULT_CONFIG);
         return;
     }
-    if(packet_parse_payload_size(1, &payload_size)){
-        packet_transition_fault();
+    if(packet_parse_payload_size(2, &payload_size)){
+        packet_transition_fault(FAULT_CONFIG);
         return;
     }
-    if(packet_parse_message_depth(2, &message_depth)){
-        packet_transition_fault();
+    if(packet_parse_message_depth(3, &message_depth)){
+        packet_transition_fault(FAULT_CONFIG);
         return;
     }
-    if(packet_parse_flag(3, &use_timestamp)){
-        packet_transition_fault();
+    if(packet_parse_flag(4, &use_timestamp)){
+        packet_transition_fault(FAULT_CONFIG);
         return;
     }
 
@@ -231,37 +301,33 @@ static void packet_accept_config_fifo(uint8_t byte){
     packet_transition_ok();
 }
 
-static void packet_accept_config_filter(uint8_t byte){
-    if(packet_buffer(SIZE_CONFIG_FILTER, byte)){
-        return;
-    }
-
+static void packet_config_filter(){
     uint8_t filter, use_filter, fifo_destination;
     MCP_FilterFrameType frame_type;
     uint32_t filter_mask, filter_object;
 
-    if(packet_parse_filter_number(0, &filter)){
-        packet_transition_fault();
+    if(packet_parse_filter_number(1, &filter)){
+        packet_transition_fault(FAULT_CONFIG);
         return;
     }
-    if(packet_parse_flag(1, &use_filter)){
-        packet_transition_fault();
+    if(packet_parse_flag(2, &use_filter)){
+        packet_transition_fault(FAULT_CONFIG);
         return;
     }
-    if(packet_parse_fifo_number(2, &fifo_destination)){
-        packet_transition_fault();
+    if(packet_parse_fifo_number(3, &fifo_destination)){
+        packet_transition_fault(FAULT_CONFIG);
         return;
     }
-    if(packet_parse_frame_type(3, &frame_type)){
-        packet_transition_fault();
+    if(packet_parse_frame_type(4, &frame_type)){
+        packet_transition_fault(FAULT_CONFIG);
         return;
     }
-    if(packet_parse_mask_or_object(4, &filter_mask)){
-        packet_transition_fault();
+    if(packet_parse_mask_or_object(5, &filter_mask)){
+        packet_transition_fault(FAULT_CONFIG);
         return;
     }
-    if(packet_parse_mask_or_object(8, &filter_object)){
-        packet_transition_fault();
+    if(packet_parse_mask_or_object(9, &filter_object)){
+        packet_transition_fault(FAULT_CONFIG);
         return;
     }
 

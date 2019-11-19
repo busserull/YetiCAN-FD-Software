@@ -51,6 +51,43 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
+MCP_MasterConfig g_mcp_master_config = {
+    .nominal_bit_rate_seg1 = 31,
+    .nominal_bit_rate_seg2 = 9,
+
+    .data_bit_rate_seg1 = 31,
+    .data_bit_rate_seg2 = 9,
+
+    .transmit_event_config = {
+        .message_depth = 2,
+        .use_timestamp = 1
+    },
+
+    .transmit_queue_config = {
+        .payload_size = MCP_PAYLOAD_64_BYTES,
+        .message_depth = 2
+    },
+
+    .receive_fifo_config = {
+        {
+            .payload_size = MCP_PAYLOAD_64_BYTES,
+            .message_depth = 6,
+            .use_timestamp = 1
+        }
+    },
+
+    .filter_config = {
+        {
+            .use_filter = 1,
+            .fifo_destination = 1,
+            .frame_type = MCP_FILTER_ACCEPT_ANY,
+            .filter_mask = 0,
+            .filter_object = 0
+        }
+    }
+};
+
+
 
 /* USER CODE END PV */
 
@@ -101,45 +138,42 @@ int main(void)
   MX_TIM14_Init();
   /* USER CODE BEGIN 2 */
 
+  uint8_t commit_config = 0x00;
+  volatile uint32_t crc = crc_calculate(&commit_config, 1);
+
+  uint8_t STX = 0x02;
+  uint8_t ETX = 0x03;
+    /* uint8_t c_bit_rate[] = {0x02, 0x01, 34, 8, 29, 12}; */
+    uint8_t c_tef[] = {STX, 0x02, 1, 0,    0xe5, 0xde, 0x3c, 0x3d, ETX};
+    uint8_t c_txq[] = {STX, 0x03, 8, 5,    0x45, 0xb4, 0x19, 0xcc, ETX};
+    /* uint8_t c_fifo[] = {0x02, 0x04, 1, 32, 2, 0}; */
+    /* uint8_t c_filter[] = {0x02, 0x05, 32, 1, 1, 1, 0xaa, 0, 0, 0, 0xaa, 0, 0, 0xef}; */
+
+    /* for(int i = 0; i < 6; i++){ */
+    /*     packet_build(c_bit_rate[i]); */
+    /* } */
+
+    for(int i = 0; i < 8; i++){
+        packet_build(c_tef[i]);
+    }
+    packet_build(c_tef[8]);
+
+    for(int i = 0; i < 8; i++){
+        packet_build(c_txq[i]);
+    }
+    packet_build(c_txq[8]);
+
+    /* for(int i = 0; i < 6; i++){ */
+    /*     packet_build(c_fifo[i]); */
+    /* } */
+
+    /* for(int i = 0; i < 14; i++){ */
+    /*     packet_build(c_filter[i]); */
+    /* } */
 
   /* mcp_init(); */
-  MCP_MasterConfig mcp_master_config = {
-      .nominal_bit_rate_seg1 = 31,
-      .nominal_bit_rate_seg2 = 9,
 
-      .data_bit_rate_seg1 = 31,
-      .data_bit_rate_seg2 = 9,
-
-      .transmit_event_config = {
-          .message_depth = 5,
-          .use_timestamp = 1
-      },
-
-      .transmit_queue_config = {
-          .payload_size = MCP_PAYLOAD_64_BYTES,
-          .message_depth = 6
-      },
-
-      .receive_fifo_config = {
-          {
-              .payload_size = MCP_PAYLOAD_64_BYTES,
-              .message_depth = 6,
-              .use_timestamp = 1
-          }
-      },
-
-      .filter_config = {
-          {
-              .use_filter = 1,
-              .fifo_destination = 1,
-              .frame_type = MCP_FILTER_ACCEPT_ANY,
-              .filter_mask = 0,
-              .filter_object = 0
-          }
-      }
-  };
-
-  mcp_init(&mcp_master_config);
+  mcp_init(&g_mcp_master_config);
 
   MX_USB_DEVICE_Init();
   /* USER CODE END 2 */
