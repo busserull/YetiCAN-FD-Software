@@ -388,7 +388,8 @@ uint8_t mcp_send(MCP_Message * p_msg){
     uint32_t data_address = head_address + 8;
 
     mcp_ram_write(head_address, transmit_object_header, 8);
-    mcp_ram_write(data_address, p_msg->p_data, p_msg->data_length);
+    uint8_t decoded_length = mcp_decode_data_length(p_msg->data_length);
+    mcp_ram_write(data_address, p_msg->p_data, decoded_length);
 
     /* Increment HEAD and request transmission */
     mcp_reg_set(C1TXQCON, 1, 0x03);
@@ -479,8 +480,9 @@ uint8_t mcp_receive(MCP_Message * p_msg, uint8_t fifo_number){
     }
 
     uint8_t data_length = object_header[4] & 0x0f;
-    uint8_t * buffer = (uint8_t *)malloc(data_length * sizeof(uint8_t));
-    mcp_ram_read(data_address, buffer, data_length);
+    uint8_t decoded_length = mcp_decode_data_length(data_length);
+    uint8_t * buffer = (uint8_t *)malloc(decoded_length * sizeof(uint8_t));
+    mcp_ram_read(data_address, buffer, decoded_length);
 
     p_msg->p_data = buffer;
 
@@ -490,4 +492,59 @@ uint8_t mcp_receive(MCP_Message * p_msg, uint8_t fifo_number){
     mcp_reg_set(control_reg, 1, 0x01);
 
     return 0;
+}
+
+uint8_t mcp_decode_data_length(MCP_DataLength data_length){
+    switch(data_length){
+        case MCP_DATA_LENGTH_00_BYTES:
+            return 0;
+
+        case MCP_DATA_LENGTH_01_BYTES:
+            return 1;
+
+        case MCP_DATA_LENGTH_02_BYTES:
+            return 2;
+
+        case MCP_DATA_LENGTH_03_BYTES:
+            return 3;
+
+        case MCP_DATA_LENGTH_04_BYTES:
+            return 4;
+
+        case MCP_DATA_LENGTH_05_BYTES:
+            return 5;
+
+        case MCP_DATA_LENGTH_06_BYTES:
+            return 6;
+
+        case MCP_DATA_LENGTH_07_BYTES:
+            return 7;
+
+        case MCP_DATA_LENGTH_08_BYTES:
+            return 8;
+
+        case MCP_DATA_LENGTH_12_BYTES:
+            return 12;
+
+        case MCP_DATA_LENGTH_16_BYTES:
+            return 16;
+
+        case MCP_DATA_LENGTH_20_BYTES:
+            return 20;
+
+        case MCP_DATA_LENGTH_24_BYTES:
+            return 24;
+
+        case MCP_DATA_LENGTH_32_BYTES:
+            return 32;
+
+        case MCP_DATA_LENGTH_48_BYTES:
+            return 48;
+
+        case MCP_DATA_LENGTH_64_BYTES:
+            return 64;
+
+        default:
+            return -1;
+    }
 }

@@ -11,6 +11,7 @@
 /* USER CODE BEGIN Includes */
 #include <stdint.h>
 #include "mcp_can_controller.h"
+#include "packet.h"
 
 /* USER CODE END Includes */
 
@@ -139,6 +140,8 @@ int main(){
 
     fifo_empty = mcp_receive(&receive_object, 1);
     if(!fifo_empty){
+        packet_message_to_host(&receive_object);
+
         free(receive_object.p_data);
     }
 

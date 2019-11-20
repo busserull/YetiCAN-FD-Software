@@ -103,4 +103,6 @@ uint8_t mcp_transmit_event_get(uint32_t * p_sequence, uint32_t * p_timestamp);
 
 uint8_t mcp_receive(MCP_Message * p_receive_object, uint8_t fifo_number);
 
+uint8_t mcp_decode_data_length(MCP_DataLength data_length);
+
 #endif

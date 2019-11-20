@@ -2,6 +2,7 @@
 #include "mcp_can_controller.h"
 #include "parse.h"
 #include "crc.h"
+#include "usbd_cdc_if.h"
 
 #define STX                                 0x02
 #define ETX                                 0x03
@@ -24,6 +25,8 @@
 #define SIZE_HEADER                           13
 #define SIZE_DATA                             64
 #define SIZE_CRC                               4
+
+#define SIZE_MESSAGE_TO_HOST_OVERHEAD         22
 
 #define SIZE_RESPONSE_PACKET                   8
 
@@ -74,13 +77,60 @@ static void (* m_after_data_action)() = NULL;
 static uint8_t m_expected_data = 0;
 static uint8_t m_packet_buffer_index = 0;
 static uint8_t m_packet_buffer[SIZE_TYPE + SIZE_HEADER + SIZE_DATA + SIZE_CRC] = {0};
-
+static uint8_t m_message_to_host_buffer[SIZE_MESSAGE_TO_HOST_OVERHEAD + SIZE_DATA] = {0};
 
 
 
 void packet_build(uint8_t byte){
     m_packet_builder_state(byte);
 }
+
+void packet_message_to_host(MCP_Message * p_message){
+    m_message_to_host_buffer[ 0] = STX;
+    m_message_to_host_buffer[ 1] = TYPE_SEND_TO_HOST;
+
+    m_message_to_host_buffer[ 2] = p_message->use_fd_format;
+    m_message_to_host_buffer[ 3] = p_message->use_bit_rate_switch;
+    m_message_to_host_buffer[ 4] = p_message->use_extended_id;
+    m_message_to_host_buffer[ 5] = p_message->error_active;
+
+    uint32_t frame_id = p_message->frame_id;
+    m_message_to_host_buffer[ 6] = (uint8_t)(frame_id >> 24);
+    m_message_to_host_buffer[ 7] = (uint8_t)(frame_id >> 16);
+    m_message_to_host_buffer[ 8] = (uint8_t)(frame_id >> 8);
+    m_message_to_host_buffer[ 9] = (uint8_t)(frame_id);
+
+    m_message_to_host_buffer[10] = p_message->filter_hit;
+    m_message_to_host_buffer[11] = p_message->timestamp_valid;
+
+    uint32_t timestamp = p_message->timestamp;
+    m_message_to_host_buffer[12] = (uint8_t)(timestamp >> 24);
+    m_message_to_host_buffer[13] = (uint8_t)(timestamp >> 16);
+    m_message_to_host_buffer[14] = (uint8_t)(timestamp >> 8);
+    m_message_to_host_buffer[15] = (uint8_t)(timestamp);
+
+    m_message_to_host_buffer[16] = p_message->data_length;
+
+    uint8_t decoded_length = mcp_decode_data_length(p_message->data_length);
+    for(uint8_t i = 0; i < decoded_length; i++){
+        m_message_to_host_buffer[17 + i] = p_message->p_data[i];
+    }
+
+    uint8_t crc_index = 17 + decoded_length;
+    uint32_t crc = crc_calculate(m_message_to_host_buffer + 1, crc_index - 1);
+    m_message_to_host_buffer[crc_index + 0] = (uint8_t)(crc >> 24);
+    m_message_to_host_buffer[crc_index + 1] = (uint8_t)(crc >> 16);
+    m_message_to_host_buffer[crc_index + 2] = (uint8_t)(crc >> 8);
+    m_message_to_host_buffer[crc_index + 3] = (uint8_t)(crc);
+
+    uint8_t etx_index = crc_index + 4;
+    m_message_to_host_buffer[etx_index] = ETX;
+
+    uint16_t packet_length = etx_index + 1;
+    CDC_Transmit_FS(m_message_to_host_buffer, packet_length);
+}
+
+
 
 
 static void packet_complete(Packet_Signal signal_to_host){
