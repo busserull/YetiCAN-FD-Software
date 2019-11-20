@@ -35,4 +35,16 @@ uint8_t parse_mask_or_object(
     uint8_t * buffer, uint8_t offset, uint32_t * p_mask_or_object
 );
 
+uint8_t parse_frame_id(
+    uint8_t * buffer, uint8_t offset, uint32_t * p_frame_id
+);
+
+uint8_t parse_sequence(
+    uint8_t * buffer, uint8_t offset, uint32_t * p_sequence
+);
+
+uint8_t parse_data_length(
+    uint8_t * buffer, uint8_t offset, MCP_DataLength * p_data_length
+);
+
 #endif

@@ -1,22 +1,3 @@
-/* USER CODE BEGIN Header */
-/**
-  ******************************************************************************
-  * @file           : main.c
-  * @brief          : Main program body
-  ******************************************************************************
-  * @attention
-  *
-  * <h2><center>&copy; Copyright (c) 2019 STMicroelectronics.
-  * All rights reserved.</center></h2>
-  *
-  * This software component is licensed by ST under Ultimate Liberty license
-  * SLA0044, the "License"; You may not use this file except in compliance with
-  * the License. You may obtain a copy of the License at:
-  *                             www.st.com/SLA0044
-  *
-  ******************************************************************************
-  */
-/* USER CODE END Header */
 
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
@@ -92,23 +73,7 @@ MCP_MasterConfig g_mcp_master_config = {
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
-void SystemClock_Config(void);
-/* USER CODE BEGIN PFP */
-
-/* USER CODE END PFP */
-
-/* Private user code ---------------------------------------------------------*/
-/* USER CODE BEGIN 0 */
-#include <stdio.h>
-
-/* USER CODE END 0 */
-
-/**
-  * @brief  The application entry point.
-  * @retval int
-  */
-int main(void)
-{
+int main(){
   /* USER CODE BEGIN 1 */
 
   /* USER CODE END 1 */
@@ -138,40 +103,7 @@ int main(void)
   MX_TIM14_Init();
   /* USER CODE BEGIN 2 */
 
-  uint8_t commit_config = 0x00;
-  volatile uint32_t crc = crc_calculate(&commit_config, 1);
 
-  uint8_t STX = 0x02;
-  uint8_t ETX = 0x03;
-    /* uint8_t c_bit_rate[] = {0x02, 0x01, 34, 8, 29, 12}; */
-    uint8_t c_tef[] = {STX, 0x02, 1, 0,    0xe5, 0xde, 0x3c, 0x3d, ETX};
-    uint8_t c_txq[] = {STX, 0x03, 8, 5,    0x45, 0xb4, 0x19, 0xcc, ETX};
-    /* uint8_t c_fifo[] = {0x02, 0x04, 1, 32, 2, 0}; */
-    /* uint8_t c_filter[] = {0x02, 0x05, 32, 1, 1, 1, 0xaa, 0, 0, 0, 0xaa, 0, 0, 0xef}; */
-
-    /* for(int i = 0; i < 6; i++){ */
-    /*     packet_build(c_bit_rate[i]); */
-    /* } */
-
-    for(int i = 0; i < 8; i++){
-        packet_build(c_tef[i]);
-    }
-    packet_build(c_tef[8]);
-
-    for(int i = 0; i < 8; i++){
-        packet_build(c_txq[i]);
-    }
-    packet_build(c_txq[8]);
-
-    /* for(int i = 0; i < 6; i++){ */
-    /*     packet_build(c_fifo[i]); */
-    /* } */
-
-    /* for(int i = 0; i < 14; i++){ */
-    /*     packet_build(c_filter[i]); */
-    /* } */
-
-  /* mcp_init(); */
 
   mcp_init(&g_mcp_master_config);
 
@@ -181,20 +113,20 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 
-    uint8_t data[8] = {'C', 'o', 'c', 'k', 't', 'i', 't', 's'};
+    /* uint8_t data[8] = {'C', 'o', 'c', 'k', 't', 'i', 't', 's'}; */
 
-    MCP_Message object = {
-        .use_fd_format = 1,
-        .use_bit_rate_switch = 0,
-        .use_extended_id = 1,
-        .error_active = 1,
+    /* MCP_Message object = { */
+    /*     .use_fd_format = 1, */
+    /*     .use_bit_rate_switch = 0, */
+    /*     .use_extended_id = 1, */
+    /*     .error_active = 1, */
 
-        .frame_id = 0x7babe,
-        .sequence_number = 0x55aa55,
+    /*     .frame_id = 0x7babe, */
+    /*     .sequence_number = 0x55aa55, */
 
-        .data_length = MCP_DATA_LENGTH_08_BYTES,
-        .p_data = data
-    };
+    /*     .data_length = MCP_DATA_LENGTH_08_BYTES, */
+    /*     .p_data = data */
+    /* }; */
 
     mcp_gpio_latch();
     mcp_gpio_unlatch();
@@ -210,12 +142,57 @@ int main(void)
         free(receive_object.p_data);
     }
 
-    mcp_send(&object);
+    uint8_t stx = 0x02;
+    uint8_t etx = 0x03;
 
-    fifo_empty = mcp_receive(&receive_object, 1);
-    if(!fifo_empty){
-        free(receive_object.p_data);
+    uint8_t send_command[24] = {
+        stx,
+        0x20,
+        1,
+        0,
+        0,
+        1,
+
+        0x00,
+        0x00,
+        0x00,
+        0xab,
+
+        0x00,
+        0x00,
+        0x00,
+        0x06,
+
+        0x04,
+        'T',
+        'i',
+        't',
+        's',
+
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+
+        etx
+    };
+
+    uint32_t crc = crc_calculate(send_command + 1, 18);
+    send_command[19] = (uint8_t)(crc >> 24);
+    send_command[20] = (uint8_t)(crc >> 16);
+    send_command[21] = (uint8_t)(crc >> 8);
+    send_command[22] = (uint8_t)(crc);
+
+    for(int i = 0; i < 24; i++){
+        packet_build(send_command[i]);
     }
+
+    /* mcp_send(&object); */
+
+    /* fifo_empty = mcp_receive(&receive_object, 1); */
+    /* if(!fifo_empty){ */
+    /*     free(receive_object.p_data); */
+    /* } */
 
 
 
@@ -293,22 +270,3 @@ void Error_Handler(void)
 
   /* USER CODE END Error_Handler_Debug */
 }
-
-#ifdef  USE_FULL_ASSERT
-/**
-  * @brief  Reports the name of the source file and the source line number
-  *         where the assert_param error has occurred.
-  * @param  file: pointer to the source file name
-  * @param  line: assert_param error line source number
-  * @retval None
-  */
-void assert_failed(char *file, uint32_t line)
-{
-  /* USER CODE BEGIN 6 */
-  /* User can add his own implementation to report the file name and line number,
-     tex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
-  /* USER CODE END 6 */
-}
-#endif /* USE_FULL_ASSERT */
-
-/************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/
