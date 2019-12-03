@@ -1,0 +1,9 @@
+<h1>Send Message</h1>
+<div style="margin-bottom: 30px">
+  <input id="can-input" type="text" value="66 75 63 6b"></input>
+  <button id="can-send">Send</button>
+</div>
+
+<h1>Received Messages</h1>
+<div id="messages">
+</div>

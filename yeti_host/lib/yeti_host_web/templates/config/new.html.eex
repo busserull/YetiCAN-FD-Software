@@ -1,0 +1,62 @@
+<h1>YetiCAN-FD Config</h1>
+
+<%= form_for @changeset, Routes.config_path(@conn, :create), [as: :config], fn f -> %>
+  <%= if @changeset.action do %>
+    <div class="arert alert-danger">
+      <p>Oops, something went wrong! Please check the errors below.</p>
+    </div>
+  <% end %>
+
+  <h2>Bit Rate</h2>
+  <div>
+    <%= label f, :nominal_1, "Nominal Bit Rate 1" %>
+    <%= text_input f, :nominal_1, placeholder: "Nominal Bit Rate Segment 1" %>
+    <%= error_tag f, :nominal_1 %>
+  </div>
+  <div>
+    <%= label f, :nominal_2, "Nominal Bit Rate 2" %>
+    <%= text_input f, :nominal_2, placeholder: "Nominal Bit Rate Segment 2" %>
+    <%= error_tag f, :nominal_2 %>
+  </div>
+  <div>
+    <%= label f, :data_1, "Data Bit Rate 1" %>
+    <%= text_input f, :data_1, placeholder: "Data Bit Rate Segment 1" %>
+    <%= error_tag f, :data_1 %>
+  </div>
+  <div>
+    <%= label f, :data_2, "Data Bit Rate 2" %>
+    <%= text_input f, :data_2, placeholder: "Data Bit Rate Segment 2" %>
+    <%= error_tag f, :data_2 %>
+  </div>
+
+  <h2>Transmit Events</h2>
+  <div>
+    <%= label f, :tef_depth, "Message Depth" %>
+    <%= text_input f, :tef_depth, placeholder: "Message Depth" %>
+    <%= error_tag f, :tef_depth %>
+  </div>
+  <div>
+    <%= label f, :tef_timestamp, "Enable Timestamps" %>
+    <%= checkbox f, :tef_timestamp %>
+    <%= error_tag f, :tef_timestamp %>
+  </div>
+
+  <h2>Transmit Queue</h2>
+  <div>
+    <%= label f, :txq_depth, "Message Depth" %>
+    <%= text_input f, :txq_depth, placeholder: "Message Depth" %>
+    <%= error_tag f, :txq_depth %>
+  </div>
+  <div>
+    <%= label f, :txq_payload, "Max Payload Size" %>
+    <%= text_input f, :txq_payload, placeholder: "Max Payload Size" %>
+    <%= error_tag f, :txq_payload %>
+  </div>
+
+  <h2>Receive Queues</h2>
+
+  <h2>Receive Filters</h2>
+
+  <%= submit "Commit Config" %>
+
+<% end %>

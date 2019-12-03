@@ -75,142 +75,39 @@ MCP_MasterConfig g_mcp_master_config = {
 
 /* Private function prototypes -----------------------------------------------*/
 int main(){
-  /* USER CODE BEGIN 1 */
+    HAL_Init();
 
-  /* USER CODE END 1 */
+    SystemClock_Config();
 
+    MX_GPIO_Init();
+    MX_SPI1_Init();
+    MX_TIM2_Init();
+    MX_CRC_Init();
+    MX_TIM14_Init();
 
-  /* MCU Configuration--------------------------------------------------------*/
+    mcp_init(&g_mcp_master_config);
 
-  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-  HAL_Init();
-
-  /* USER CODE BEGIN Init */
-
-  /* USER CODE END Init */
-
-  /* Configure the system clock */
-  SystemClock_Config();
-
-  /* USER CODE BEGIN SysInit */
-
-  /* USER CODE END SysInit */
-
-  /* Initialize all configured peripherals */
-  MX_GPIO_Init();
-  MX_SPI1_Init();
-  MX_TIM2_Init();
-  MX_CRC_Init();
-  MX_TIM14_Init();
-  /* USER CODE BEGIN 2 */
-
-
-
-  mcp_init(&g_mcp_master_config);
-
-  MX_USB_DEVICE_Init();
-  /* USER CODE END 2 */
-
-  /* Infinite loop */
-  /* USER CODE BEGIN WHILE */
-
-    /* uint8_t data[8] = {'C', 'o', 'c', 'k', 't', 'i', 't', 's'}; */
-
-    /* MCP_Message object = { */
-    /*     .use_fd_format = 1, */
-    /*     .use_bit_rate_switch = 0, */
-    /*     .use_extended_id = 1, */
-    /*     .error_active = 1, */
-
-    /*     .frame_id = 0x7babe, */
-    /*     .sequence_number = 0x55aa55, */
-
-    /*     .data_length = MCP_DATA_LENGTH_08_BYTES, */
-    /*     .p_data = data */
-    /* }; */
+    MX_USB_DEVICE_Init();
 
     mcp_gpio_latch();
     mcp_gpio_unlatch();
 
-  while (1)
-  {
-    MCP_Message receive_object;
+    while (1)
+    {
+        MCP_Message receive_object;
 
-    uint8_t fifo_empty = 0;
+        uint8_t fifo_empty = 0;
 
-    fifo_empty = mcp_receive(&receive_object, 1);
-    if(!fifo_empty){
-        packet_message_to_host(&receive_object);
+        fifo_empty = mcp_receive(&receive_object, 1);
+        if(!fifo_empty){
+            packet_message_to_host(&receive_object);
 
-        free(receive_object.p_data);
+            free(receive_object.p_data);
+        }
+
+
+        HAL_Delay(5);
     }
-
-    uint8_t stx = 0x02;
-    uint8_t etx = 0x03;
-
-    uint8_t send_command[24] = {
-        stx,
-        0x20,
-        1,
-        0,
-        0,
-        1,
-
-        0x00,
-        0x00,
-        0x00,
-        0xab,
-
-        0x00,
-        0x00,
-        0x00,
-        0x06,
-
-        0x04,
-        'T',
-        'i',
-        't',
-        's',
-
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-
-        etx
-    };
-
-    uint32_t crc = crc_calculate(send_command + 1, 18);
-    send_command[19] = (uint8_t)(crc >> 24);
-    send_command[20] = (uint8_t)(crc >> 16);
-    send_command[21] = (uint8_t)(crc >> 8);
-    send_command[22] = (uint8_t)(crc);
-
-    for(int i = 0; i < 24; i++){
-        packet_build(send_command[i]);
-    }
-
-    /* mcp_send(&object); */
-
-    /* fifo_empty = mcp_receive(&receive_object, 1); */
-    /* if(!fifo_empty){ */
-    /*     free(receive_object.p_data); */
-    /* } */
-
-
-
-    HAL_Delay(5);
-    /* mcp_check_transmit_event(&event); */
-    /* fifo = any_fifos(); */
-    /* HAL_Delay(5); */
-    /* get_2(); */
-    /* HAL_Delay(500); */
-
-
-    /* USER CODE END WHILE */
-
-    /* USER CODE BEGIN 3 */
-  }
   /* USER CODE END 3 */
 }
 

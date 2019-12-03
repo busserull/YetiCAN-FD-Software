@@ -14,6 +14,7 @@
 #define TYPE_CONFIG_TRANSMIT_QUEUE          0x03
 #define TYPE_CONFIG_FIFO                    0x04
 #define TYPE_CONFIG_FILTER                  0x05
+#define TYPE_CONFIG_REQUEST_CURRENT         0x0f
 
 #define TYPE_SEND_FROM_HOST                 0x20
 #define TYPE_SEND_TO_HOST                   0x30
@@ -50,6 +51,8 @@ typedef enum {
 
 static void     packet_complete(Packet_Signal signal_to_host);
 
+static void     packet_crc_and_dispatch(uint8_t current_index);
+
 static uint8_t  packet_buffer(uint8_t byte);
 
 static void     packet_accept_stx(uint8_t byte);
@@ -67,6 +70,7 @@ static void     packet_config_tef();
 static void     packet_config_txq();
 static void     packet_config_fifo();
 static void     packet_config_filter();
+static void     packet_config_send_current();
 
 static void     packet_message_from_host();
 
@@ -157,6 +161,19 @@ static void packet_complete(Packet_Signal signal_to_host){
     m_packet_builder_state = packet_accept_stx;
 }
 
+static void packet_crc_and_dispatch(uint8_t current_index){
+    uint32_t crc = crc_calculate(m_message_to_host_buffer + 1, 5);
+
+    m_message_to_host_buffer[current_index + 0] = (uint8_t)(crc >> 24);
+    m_message_to_host_buffer[current_index + 1] = (uint8_t)(crc >> 16);
+    m_message_to_host_buffer[current_index + 2] = (uint8_t)(crc >> 8);
+    m_message_to_host_buffer[current_index + 3] = (uint8_t)(crc);
+
+    m_message_to_host_buffer[current_index + 4] = ETX;
+
+    CDC_Transmit_FS(m_message_to_host_buffer, current_index + 5);
+}
+
 static uint8_t packet_buffer(uint8_t byte){
     m_packet_buffer[m_packet_buffer_index] = byte;
     m_packet_buffer_index++;
@@ -216,6 +233,12 @@ static void packet_accept_type(uint8_t byte){
             m_expected_data = SIZE_CONFIG_FILTER;
             m_packet_builder_state = packet_accept_data;
             break;
+
+        /* case TYPE_CONFIG_REQUEST_CURRENT: */
+        /*     m_after_data_action = packet_config_send_current; */
+        /*     m_expected_data = SIZE_CRC; */
+        /*     m_packet_builder_state = packet_accept_crc; */
+        /*     break; */
 
         case TYPE_SEND_FROM_HOST:
             m_after_data_action = packet_message_from_host;
@@ -414,6 +437,79 @@ static void packet_config_filter(){
     p_filter->frame_type = frame_type;
     p_filter->filter_mask = filter_mask;
     p_filter->filter_object = filter_object;
+
+    packet_complete(SIGNAL_OK);
+}
+
+static void packet_config_send_current(){
+    m_message_to_host_buffer[0] = STX;
+    MCP_FifoConfig * p_fifo;
+
+    /* Send bit rate */
+    m_message_to_host_buffer[1] = TYPE_CONFIG_BIT_RATE;
+    m_message_to_host_buffer[2] = g_mcp_master_config.nominal_bit_rate_seg1;
+    m_message_to_host_buffer[3] = g_mcp_master_config.nominal_bit_rate_seg2;
+    m_message_to_host_buffer[4] = g_mcp_master_config.data_bit_rate_seg1;
+    m_message_to_host_buffer[5] = g_mcp_master_config.data_bit_rate_seg2;
+
+    HAL_Delay(1000);
+    packet_crc_and_dispatch(6);
+    HAL_Delay(1000);
+
+    /* Send Transmit Event */
+    p_fifo = &(g_mcp_master_config.transmit_event_config);
+    m_message_to_host_buffer[1] = TYPE_CONFIG_TRANSMIT_EVENT_FIFO;
+    m_message_to_host_buffer[2] = p_fifo->message_depth;
+    m_message_to_host_buffer[3] = p_fifo->use_timestamp;
+
+    packet_crc_and_dispatch(4);
+
+    /* Send Transmit Queue */
+    p_fifo = &(g_mcp_master_config.transmit_queue_config);
+    m_message_to_host_buffer[1] = TYPE_CONFIG_TRANSMIT_QUEUE;
+    m_message_to_host_buffer[2] = (uint8_t)(p_fifo->payload_size);
+    m_message_to_host_buffer[3] = p_fifo->message_depth;
+
+    packet_crc_and_dispatch(4);
+
+    /* Send FIFOs */
+    for(uint8_t fifo = 1; fifo <= 31; fifo++){
+        p_fifo = &(g_mcp_master_config.receive_fifo_config[fifo - 1]);
+
+        m_message_to_host_buffer[1] = TYPE_CONFIG_FIFO;
+        m_message_to_host_buffer[2] = fifo;
+        m_message_to_host_buffer[3] = (uint8_t)(p_fifo->payload_size);
+        m_message_to_host_buffer[4] = p_fifo->message_depth;
+        m_message_to_host_buffer[5] = p_fifo->use_timestamp;
+
+        packet_crc_and_dispatch(6);
+    }
+
+    /* Send Filters */
+    MCP_FilterConfig * p_filter;
+
+    for(uint8_t filter = 0; filter <= 31; filter++){
+        p_filter = &(g_mcp_master_config.filter_config[filter]);
+        m_message_to_host_buffer[1] = TYPE_CONFIG_FILTER;
+        m_message_to_host_buffer[2] = filter;
+        m_message_to_host_buffer[3] = p_filter->use_filter;
+        m_message_to_host_buffer[4] = p_filter->fifo_destination;
+        m_message_to_host_buffer[5] = (uint8_t)(p_filter->frame_type);
+
+        uint32_t mask = p_filter->filter_mask;
+        m_message_to_host_buffer[6] = (uint8_t)(mask >> 24);
+        m_message_to_host_buffer[7] = (uint8_t)(mask >> 16);
+        m_message_to_host_buffer[8] = (uint8_t)(mask >> 8);
+        m_message_to_host_buffer[9] = (uint8_t)(mask);
+
+        uint32_t object = p_filter->filter_object;
+        m_message_to_host_buffer[10] = (uint8_t)(object >> 24);
+        m_message_to_host_buffer[11] = (uint8_t)(object >> 16);
+        m_message_to_host_buffer[12] = (uint8_t)(object >> 8);
+        m_message_to_host_buffer[13] = (uint8_t)(object);
+
+        packet_crc_and_dispatch(14);
+    }
 
     packet_complete(SIGNAL_OK);
 }
